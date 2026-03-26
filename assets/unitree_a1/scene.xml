@@ -1,0 +1,38 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mujoco model="a1 scene">
+  <include file="a1.xml" />
+
+  <statistic center="0 0 0.1" extent="0.8" />
+
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0" />
+    <rgba haze="0.15 0.25 0.35 1" />
+    <global azimuth="120" elevation="-20" />
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072" />
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3" markrgb="0.8 0.8 0.8" width="300" height="300" />
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2" />
+    <material name="wall" rgba="0.7 0.7 0.7 1" specular="0.3" shininess="0.5" />
+    <material name="cube1" rgba="0.8 0.3 0.3 1" specular="0.5" shininess="0.8" />
+    <material name="cube2" rgba="0.3 0.8 0.3 1" specular="0.5" shininess="0.8" />
+    <material name="cube3" rgba="0.3 0.3 0.8 1" specular="0.5" shininess="0.8" />
+    <material name="cube4" rgba="0.8 0.8 0.3 1" specular="0.5" shininess="0.8" />
+  </asset>
+
+  <worldbody>
+    <light pos="0 0 1.5" dir="0 0 -1" directional="true" />
+    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane" />
+    
+    <geom name="wall_front" type="box" size="4.0 0.1 1.0" pos="0 4.0 1.0" material="wall" />
+    <geom name="wall_back" type="box" size="4.0 0.1 1.0" pos="0 -4.0 1.0" material="wall" />
+    <geom name="wall_left" type="box" size="0.1 4.0 1.0" pos="-4.0 0 1.0" material="wall" />
+    <geom name="wall_right" type="box" size="0.1 4.0 1.0" pos="4.0 0 1.0" material="wall" />
+
+    <body name="target_body" mocap="true" pos="0 0 0.3">
+      <geom name="target_point" type="sphere" size="0.1" rgba="1.0 0.0 0.0 1.0" contype="0" conaffinity="0" />
+    </body>
+
+  <geom name="cube1" type="box" size="0.20755191269251327 0.17404035524150963 1.0" pos="-1.8548266821598758 -0.8991880328804422 1.0" material="cube1" /><geom name="cube2" type="box" size="0.3243409782095459 0.1583207118154855 1.0" pos="-0.7631298151433361 0.15155095251824102 1.0" material="cube1" /><geom name="cube3" type="box" size="0.3466101554787134 0.33018395789170757 1.0" pos="1.4508582303064532 1.8570249159824943 1.0" material="cube1" /><geom name="cube4" type="box" size="0.21697956498864482 0.28006482561913315 1.0" pos="-1.5583060884884212 0.06540939654791345 1.0" material="cube1" /><geom name="cube5" type="box" size="0.23191786192148237 0.26048147156986684 1.0" pos="0.4397498829768627 1.9081725140901273 1.0" material="cube1" /><geom name="cube6" type="box" size="0.28990711778295525 0.3141589120571683 1.0" pos="-1.336944072563636 -1.630466751094262 1.0" material="cube1" /><geom name="cube7" type="box" size="0.22290592987977578 0.33486148987561626 1.0" pos="2.5718272000144946 -2.757306421526554 1.0" material="cube1" quat="0.9524230744058769 0 0 0.3047790795629802" /><geom name="cube8" type="box" size="0.21084109712647803 0.343060214503031 1.0" pos="-0.7091515743539141 -0.3691486705872742 1.0" material="cube1" /><geom name="cube9" type="box" size="0.1710650320683823 0.1516313948919457 1.0" pos="0.7212709740503875 1.7459783171988645 1.0" material="cube1" quat="-0.824907363945145 0 0 0.5652679372731768" /><geom name="cube10" type="box" size="0.1839173368108685 0.1780273954435626 1.0" pos="0.557372857576544 -2.633185267825625 1.0" material="cube1" /><geom name="cube11" type="box" size="0.21580077727601146 0.3347717492034891 1.0" pos="-0.5007312585639903 -0.21888710738542194 1.0" material="cube1" /></worldbody>
+</mujoco>

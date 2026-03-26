@@ -164,178 +164,74 @@ Before the equations, we define the symbols once and keep the notation consisten
 
 ---
 
-### 2. Soft value and Bellman operator
+2. Soft value and Bellman operator
 
 The soft state value is defined before it is used in the Bellman operator:
 
-$$
-J^\pi(s) := \mathbb{E}_{A \sim \pi(\cdot \mid s)} \left[q^w(s, A) - \eta \ln \pi(A \mid s)\right]
-$$
+$$V^\pi(s) := \mathbb{E}_{A \sim \pi(\cdot \mid s)} \left[ q^w(s, A) - \eta \ln \pi(A \mid s) \right]$$
 
 Using that value, the Bellman operator for SAC is written as:
 
-$$
-\mathcal{P}^\pi[q^w](S_t, A_t)
-:=
-R_t
-+
-\gamma \, \mathbb{E}_{S_{t+1} \sim P(\cdot \mid S_t, A_t)} \left[J^\pi(S_{t+1})\right]
-$$
+$$\mathcal{P}^\pi[q^w](S_t, A_t) := R_t + \gamma \mathbb{E}_{S_{t+1} \sim P(\cdot \mid S_t, A_t)} \left[ V^\pi(S_{t+1}) \right]$$
 
 For sampled updates, the next-state soft value is approximated with the target critic:
 
-$$
-J^\pi(S_{t+1})
-\approx
-q^{w_{\text{target}}}(S_{t+1}, A_{t+1})
--
-\eta \ln \pi(A_{t+1} \mid S_{t+1})
-$$
+$$V^\pi(S_{t+1}) \approx q^{w_{\text{target}}}(S_{t+1}, A_{t+1}) - \eta \ln \pi(A_{t+1} \mid S_{t+1})$$
 
 where $A_{t+1} \sim \pi(\cdot \mid S_{t+1})$.
 
-The implementation uses two critic networks to reduce overestimation bias, but the notation here keeps a single symbol $q^w$ and a single target symbol $q^{w_{\text{target}}}$ for readability.
+3. TD error and critic loss
 
----
+The temporal-difference error is defined as:
 
-### 3. TD error and critic loss
-
-Following the lecture-style presentation, define the temporal-difference error first:
-
-$$
-\delta^w(S_t, A_t, S_{t+1}, A_{t+1})
-:=
-q^w(S_t, A_t)
--
-R_t
--
-\gamma
-\left(
-q^{w_{\text{target}}}(S_{t+1}, A_{t+1})
--
-\eta \ln \pi(A_{t+1} \mid S_{t+1})
-\right)
-$$
+$$\delta^w(S_t, A_t, S_{t+1}, A_{t+1}) := q^w(S_t, A_t) - \left( R_t + \gamma \left( q^{w_{\text{target}}}(S_{t+1}, A_{t+1}) - \eta \ln \pi(A_{t+1} \mid S_{t+1}) \right) \right)$$
 
 The critic loss is then written directly through that TD error:
 
-$$
-L(w)
-=
-\mathbb{E}\left[\left(\delta^w(S_t, A_t, S_{t+1}, A_{t+1})\right)^2\right]
-$$
+$$L(w) = \mathbb{E} \left[ \left( \delta^w(S_t, A_t, S_{t+1}, A_{t+1}) \right)^2 \right]$$
 
-This makes the structure explicit: the critic is trained so that the current estimate $q^w(S_t, A_t)$ matches the one-step soft Bellman target built from the next sampled action $A_{t+1}$.
+4. Policy network (the actor)
 
----
+The actor update follows the critic signal while accounting for the entropy-regularized objective:
 
-### 4. Policy network (the actor)
+$$\theta_{t+1} \leftarrow \theta_t + \alpha_t \nabla_\theta q^w(S_t, \pi^\theta(S_t)) \big|_{\theta = \theta_t}$$
 
-The actor is represented by a $\theta$-parametrized policy $\pi^\theta(a \mid s)$. In implementation form, the actor update follows the critic signal while also accounting for the entropy-regularized SAC objective:
+5. SAC extension: entropy bonus
 
-$$
-\theta_{t+1}
-\leftarrow
-\theta_t
-+
-\alpha_t \nabla_\theta q^w(S_t, \pi^\theta(S_t))
-\big|_{\theta = \theta_t}
-$$
+The global training objective is:
 
-This update encourages the policy to choose actions that receive higher soft action values under the critic.
-
----
-
-### 5. SAC extension: entropy bonus
-
-SAC extends the standard return objective with an entropy bonus. Using $\mathcal{H}[\pi(\cdot \mid s)]$ to denote the policy entropy at state $s$, the global training objective is:
-
-$$
-\mathcal{J}_{\text{SAC}}(\pi)
-:=
-\sum_{t=0}^{\infty}
-\mathbb{E}
-\left[
-R_t
-+
-\eta \mathcal{H}[\pi(\cdot \mid S_t)]
-\right]
-$$
+$$\mathcal{J}_{\text{SAC}}(\pi) := \sum_{t=0}^{\infty} \mathbb{E} \left[ R_t + \eta \mathcal{H}[\pi(\cdot \mid S_t)] \right]$$
 
 with entropy defined as:
 
-$$
-\mathcal{H}[\pi(\cdot \mid s)]
-:=
--
-\mathbb{E}_{A \sim \pi(\cdot \mid s)}
-\left[\ln \pi(A \mid s)\right]
-$$
+$$\mathcal{H}[\pi(\cdot \mid s)] := - \mathbb{E}_{A \sim \pi(\cdot \mid s)} \left[ \ln \pi(A \mid s) \right]$$
 
-This is the term that keeps the policy exploratory early in training and helps it avoid collapsing too quickly to a narrow action distribution.
+6. Change of variables
 
----
+For $a = \tanh(u)$, the density correction used in the policy is:
 
-### 6. Change of variables
-
-Let $u$ denote the raw Gaussian action sample before squashing, and let $a := \tanh(u)$ be the final bounded action sent to the environment. Because the transformation changes density, the log-probability must be corrected through the change-of-variables rule:
-
-$$
-p(y) = \frac{p(x)}{|f'(x)|}
-\quad \Longrightarrow \quad
-\ln p(y) = \ln p(x) - \ln |f'(x)|
-$$
-
-For $f(u) = \tanh(u)$, the derivative is $f'(u) = 1 - \tanh^2(u)$. The density correction used in the policy is therefore:
-
-$$
-\ln \pi(a \mid s)
-=
-\ln \mu(u \mid s)
--
-\sum_{i=1}^{D} \ln \left(1 - \tanh^2(u_i)\right)
-$$
+$$\ln \pi(a \mid s) = \ln \mu(u \mid s) - \sum_{i=1}^{D} \ln \left( 1 - \tanh^2(u_i) \right)$$
 
 where $D$ is the action dimension.
 
----
+7. SAC extension: automatic entropy tuning
 
-### 7. SAC extension: automatic entropy tuning
+SAC optimizes the temperature $\eta$ toward a target entropy $\bar{\mathcal{H}}$:
 
-To adapt the entropy weight automatically, SAC optimizes the temperature $\eta$ toward a target entropy $\bar{\mathcal{H}}$:
+$$J(\eta) = \mathbb{E}_{A \sim \pi(\cdot \mid s)} \left[ -\eta \left( \ln \pi(A \mid s) + \bar{\mathcal{H}} \right) \right]$$
 
-$$
-J(\eta)
-=
-\mathbb{E}_{A \sim \pi(\cdot \mid s)}
-\left[
--\eta \left(\ln \pi(A \mid s) + \bar{\mathcal{H}}\right)
-\right]
-$$
+The target entropy heuristic is typically:
 
-The target entropy heuristic is set from the action-space dimension:
+$$\bar{\mathcal{H}} = -\dim(\mathcal{A})$$
 
-$$
-\bar{\mathcal{H}} = -\mathrm{dim}(\mathbb{A})
-$$
+8. Target network updates
 
-In this project, entropy management is important during curriculum transitions, because a temporary push toward higher exploration can help the policy escape poor local behaviors after the environment becomes harder.
+Target parameters are updated with Polyak averaging:
 
----
+$$w_{\text{target}} \leftarrow \tau w + (1 - \tau) w_{\text{target}}$$
 
-### 8. Target network updates
+In the current configuration, $\tau = 0.005$.
 
-To stabilize training, the target critic parameters are updated with Polyak averaging:
-
-$$
-w_{\text{target}}
-\leftarrow
-\tau w
-+
-(1 - \tau) w_{\text{target}}
-$$
-
-In the current configuration, the soft-update coefficient is $\tau = 0.005$.
 
 ---
 

@@ -144,7 +144,7 @@ The actor predicts the high-level command, while the two critic networks estimat
 
 Before the equations, we define the symbols once and keep the notation consistent throughout this section.
 
-### 1. Symbols and definitions
+1. Symbols and definitions
 
 - $S_t$ is the state at time step $t$.
 - $A_t$ is the action sampled at time step $t$.

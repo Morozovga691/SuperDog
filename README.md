@@ -168,7 +168,7 @@ Before the equations, we define the symbols once and keep the notation consisten
 
 The soft state value is defined before it is used in the Bellman operator:
 
-$$V^\pi(s) := \mathbb{E}_{A \sim \pi(\cdot \mid s)} \left[ q^w(s, A) - \eta \ln \pi(A \mid s) \right]$$
+$$J^\pi(s) := \mathbb{E}_{A \sim \pi(\cdot \mid s)} \left[ q^w(s, A) - \eta \ln \pi(A \mid s) \right]$$
 
 Using that value, the Bellman operator for SAC is written as:
 
@@ -176,7 +176,7 @@ $$\mathcal{P}^\pi[q^w](S_t, A_t) := R_t + \gamma \mathbb{E}_{S_{t+1} \sim P(\cdo
 
 For sampled updates, the next-state soft value is approximated with the target critic:
 
-$$V^\pi(S_{t+1}) \approx q^{w_{\text{target}}}(S_{t+1}, A_{t+1}) - \eta \ln \pi(A_{t+1} \mid S_{t+1})$$
+$$J^\pi(S_{t+1}) = q^{w_{\text{target}}}(S_{t+1}, A_{t+1}) - \eta \ln \pi(A_{t+1} \mid S_{t+1})$$
 
 where $A_{t+1} \sim \pi(\cdot \mid S_{t+1})$.
 

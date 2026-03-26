@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SuperDog — SAC Network Architecture</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; background: #fff; color: #333; padding: 32px; }
+  .container { max-width: 960px; margin: 0 auto; }
+  h1 { text-align: center; font-size: 22px; font-weight: 700; color: #222; margin-bottom: 8px; }
+  .subtitle { text-align: center; font-size: 13px; color: #888; margin-bottom: 32px; }
+
+  .cards { display: flex; gap: 24px; align-items: flex-start; }
+  .card { border: 2px solid #e0e0e0; border-radius: 14px; padding: 20px; background: #fff; }
+  .card-actor { flex: 2; }
+  .card-critic { flex: 3; }
+  .card-title { text-align: center; font-weight: 700; font-size: 16px; margin-bottom: 14px; }
+  .card-actor .card-title { color: #1a73e8; }
+  .card-critic .card-title { color: #d93025; }
+
+  .block { border-radius: 8px; padding: 8px 10px; text-align: center; font-size: 12px; margin-bottom: 4px; }
+  .arrow { text-align: center; color: #bbb; font-size: 16px; line-height: 20px; }
+  .arrow-label { font-size: 11px; color: #999; }
+
+  .input-block { background: #e8f0fe; border: 1px solid #c5d7f2; }
+  .input-block-critic { background: #fce8e6; border: 1px solid #f5c6c0; }
+  .input-block-action { background: #e6f4ea; border: 1px solid #b7e1cd; }
+  .concat-block { background: #fff3e0; border: 1px solid #ffcc80; }
+  .layer-actor { background: #1a73e8; color: #fff; border-radius: 6px; }
+  .layer-q1 { background: #d93025; color: #fff; border-radius: 6px; }
+  .layer-q2 { background: #e37400; color: #fff; border-radius: 6px; }
+  .split-block { background: #fbbc04; color: #333; border-radius: 8px; }
+  .output-block { background: #34a853; color: #fff; border-radius: 8px; font-weight: 600; }
+
+  .q-columns { display: flex; gap: 14px; margin-top: 6px; }
+  .q-col { flex: 1; }
+  .q-col-title { text-align: center; font-weight: 600; font-size: 12px; margin-bottom: 6px; }
+  .q1-title { color: #d93025; }
+  .q2-title { color: #e37400; }
+
+  .min-block { background: #f1f3f4; border-radius: 6px; padding: 6px; text-align: center; font-size: 11px; color: #555; margin-top: 10px; }
+
+  .footer { display: flex; gap: 0; margin-top: 24px; border-radius: 8px; overflow: hidden; }
+  .footer-cell { flex: 1; padding: 8px; text-align: center; font-size: 11px; line-height: 1.4; }
+  .footer-cell b { display: block; margin-bottom: 2px; }
+
+  .obs-table { width: 100%; margin-top: 32px; border-collapse: collapse; font-size: 12px; }
+  .obs-table th { background: #f5f5f5; padding: 8px; text-align: left; font-weight: 600; border-bottom: 2px solid #ddd; }
+  .obs-table td { padding: 6px 8px; border-bottom: 1px solid #eee; }
+  .obs-table .dim { text-align: center; font-weight: 600; color: #1a73e8; }
+  .obs-table .dim-c { text-align: center; font-weight: 600; color: #d93025; }
+  .obs-table .priv { background: #fce8e6; }
+  .obs-table .total { font-weight: 700; background: #f5f5f5; }
+
+  h2 { font-size: 16px; font-weight: 700; color: #222; margin: 32px 0 12px 0; }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin: 16px 0; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+  .legend-swatch { width: 14px; height: 14px; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div class="container">
+
+<h1>SuperDog — SAC Network Architecture</h1>
+<p class="subtitle">Asymmetric Actor-Critic with history stacking and privileged critic features</p>
+
+<!-- Legend -->
+<div class="legend">
+  <div class="legend-item"><div class="legend-swatch" style="background:#e8f0fe; border:1px solid #c5d7f2;"></div>Actor input (sensor data + noise)</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#fce8e6; border:1px solid #f5c6c0;"></div>Critic input (clean + privileged)</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#e6f4ea; border:1px solid #b7e1cd;"></div>Action / output</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#fbbc04;"></div>Distribution split</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#1a73e8;"></div>Actor layers</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#d93025;"></div>Q₁ layers</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:#e37400;"></div>Q₂ layers</div>
+</div>
+
+<!-- Network Cards -->
+<div class="cards">
+
+  <!-- ACTOR -->
+  <div class="card card-actor">
+    <div class="card-title">ACTOR<br><span style="font-size:11px; font-weight:400; color:#888;">DiagGaussianActor</span></div>
+
+    <div class="block input-block">
+      <b>Input: 56 dims</b><br>
+      base_obs(47) + action_history(3 × 3)
+    </div>
+    <div class="arrow">↓</div>
+    <div class="block layer-actor">Linear(56 → 512) + ReLU</div>
+    <div class="arrow">↓</div>
+    <div class="block layer-actor">Linear(512 → 512) + ReLU</div>
+    <div class="arrow">↓</div>
+    <div class="block layer-actor">Linear(512 → 256) + ReLU</div>
+    <div class="arrow">↓</div>
+    <div class="block layer-actor">Linear(256 → 6)</div>
+    <div class="arrow">↓</div>
+    <div class="block split-block">
+      <b>Split → μ(3), log_σ(3)</b><br>
+      <span style="font-size:11px;">log_σ = tanh → clamp to [−2, 2]</span>
+    </div>
+    <div class="arrow">↓</div>
+    <div class="block output-block">
+      SquashedNormal → tanh<br>
+      <b>action [vx, vy, ω] ∈ [−1, 1]³</b>
+    </div>
+  </div>
+
+  <!-- CRITIC -->
+  <div class="card card-critic">
+    <div class="card-title">CRITIC<br><span style="font-size:11px; font-weight:400; color:#888;">DoubleQCritic (twin Q-networks)</span></div>
+
+    <div class="block input-block-critic">
+      <b>Observation: 201 dims</b><br>
+      critic_base(49) × 4 frames(history=3) + top_k(5)
+    </div>
+    <div style="height:4px;"></div>
+    <div class="block input-block-action">
+      <b>Action: 3 dims</b> — from Actor [vx, vy, ω]
+    </div>
+    <div class="arrow">concat ↓</div>
+    <div class="block concat-block">
+      <b>Concatenated: 201 + 3 = 204 dims</b>
+    </div>
+
+    <div class="q-columns">
+      <!-- Q1 -->
+      <div class="q-col">
+        <div class="q-col-title q1-title">Q₁ Network</div>
+        <div class="block layer-q1">Linear(204 → 512) + ReLU</div>
+        <div class="arrow">↓</div>
+        <div class="block layer-q1">Linear(512 → 512) + ReLU</div>
+        <div class="arrow">↓</div>
+        <div class="block layer-q1">Linear(512 → 256) + ReLU</div>
+        <div class="arrow">↓</div>
+        <div class="block layer-q1">Linear(256 → 1)</div>
+        <div class="arrow">↓</div>
+        <div class="block output-block">Q₁(s, a)</div>
+      </div>
+      <!-- Q2 -->
+      <div class="q-col">
+        <div class="q-col-title q2-title">Q₂ Network</div>
+        <div class="block layer-q2">Linear(204 → 512) + ReLU</div>
+        <div class="arrow">↓</div>
+        <div class="block layer-q2">Linear(512 → 512) + ReLU</div>
+        <div class="arrow">↓</div>
+        <div class="block layer-q2">Linear(512 → 256) + ReLU</div>
+        <div class="arrow">↓</div>
+        <div class="block layer-q2">Linear(256 → 1)</div>
+        <div class="arrow">↓</div>
+        <div class="block output-block">Q₂(s, a)</div>
+      </div>
+    </div>
+
+    <div class="min-block"><b>min(Q₁, Q₂)</b> used for actor update (clipped double-Q)</div>
+  </div>
+
+</div>
+
+<!-- Footer -->
+<div class="footer">
+  <div class="footer-cell" style="background:#e8f0fe; color:#1a73e8;">
+    <b>α (temperature)</b>
+    learnable, init = 0.2
+  </div>
+  <div class="footer-cell" style="background:#fce8e6; color:#d93025;">
+    <b>Target critic</b>
+    soft update τ = 0.005
+  </div>
+  <div class="footer-cell" style="background:#e6f4ea; color:#137333;">
+    <b>Orthogonal init</b>
+    all Linear layers
+  </div>
+  <div class="footer-cell" style="background:#fff3e0; color:#e37400;">
+    <b>Target entropy</b>
+    −1.5
+  </div>
+</div>
+
+<!-- Observation breakdown tables -->
+<h2>Actor Observation Breakdown (47 → 56 dims)</h2>
+<table class="obs-table">
+  <tr><th>#</th><th>Component</th><th>Dim</th><th>Normalization / Notes</th></tr>
+  <tr><td>1</td><td>LiDAR sectors (40 beams, min-pooled)</td><td class="dim">40</td><td>[0, 3m] → [−1, 1], noise σ=0.02m</td></tr>
+  <tr><td>2</td><td>Angular velocity ω</td><td class="dim">1</td><td>/ max_angular_vel, noise σ=0.02 rad/s</td></tr>
+  <tr><td>3</td><td>sin(angle to target)</td><td class="dim">1</td><td>clipped [−1, 1], noise σ=0.05 rad</td></tr>
+  <tr><td>4</td><td>cos(angle to target)</td><td class="dim">1</td><td>clipped [−1, 1], noise σ=0.05 rad</td></tr>
+  <tr><td>5</td><td>Distance to target</td><td class="dim">1</td><td>[0, max_dist] → [−1, 1], noise σ=0.05m</td></tr>
+  <tr><td>6</td><td>Previous action [vx, vy, ω]</td><td class="dim">3</td><td>clipped [−1, 1]</td></tr>
+  <tr class="total"><td></td><td>Base observation</td><td class="dim">47</td><td></td></tr>
+  <tr><td>7</td><td>Action history (last 3 steps × 3 dims)</td><td class="dim">9</td><td>appended to base</td></tr>
+  <tr class="total"><td></td><td><b>Actor network input</b></td><td class="dim"><b>56</b></td><td></td></tr>
+</table>
+
+<h2>Critic Observation Breakdown (49 → 201 dims)</h2>
+<table class="obs-table">
+  <tr><th>#</th><th>Component</th><th>Dim</th><th>Notes</th></tr>
+  <tr><td>1</td><td>Actor base observation (clean, no noise)</td><td class="dim-c">47</td><td>Same features, zero noise injected</td></tr>
+  <tr class="priv"><td>2</td><td>Forward velocity vx</td><td class="dim-c">1</td><td>Privileged — not available to actor</td></tr>
+  <tr class="priv"><td>3</td><td>Lateral velocity vy</td><td class="dim-c">1</td><td>Privileged — not available to actor</td></tr>
+  <tr class="total"><td></td><td>Critic base (single frame)</td><td class="dim-c">49</td><td></td></tr>
+  <tr><td>4</td><td>History stacking: 4 frames (t, t−1, t−2, t−3)</td><td class="dim-c">196</td><td>49 × 4 = 196</td></tr>
+  <tr class="priv"><td>5</td><td>Top-5 nearest LiDAR distances</td><td class="dim-c">5</td><td>Privileged: sorted raw beams, normalized</td></tr>
+  <tr class="total"><td></td><td><b>Critic network input (before action concat)</b></td><td class="dim-c"><b>201</b></td><td></td></tr>
+  <tr><td>6</td><td>Action [vx, vy, ω] (concatenated by network)</td><td class="dim-c">3</td><td>From actor output</td></tr>
+  <tr class="total"><td></td><td><b>Q-network Linear layer input</b></td><td class="dim-c"><b>204</b></td><td></td></tr>
+</table>
+
+</div>
+</body>
+</html>

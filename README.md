@@ -80,39 +80,89 @@ SuperDog trains a navigation policy through **curriculum learning** across 7 dif
 
 The architecture uses **asymmetric actor-critic**: the critic receives additional privileged information (velocity, obstacle proximity) that the actor does not see — enabling better value estimation while the actor remains deployable on a real robot with limited sensors.
 
-```
-Observation (lidar sectors + goal vector + proprioception)
-        │
-        ▼
-┌──────────────┐     action history (last 3 steps)
-│  SAC Actor   │◄────────────────────────────────┐
-│ [512,512,256]│                                 │
-└──────┬───────┘                                 │
-       │ cmd = [vx, vy, ω]                       │
-       ▼                                         │
-┌──────────────┐                                 │
-│Walking Policy│  (frozen, pretrained)            │
-│   12-DOF PD  │                                 │
-└──────┬───────┘                                 │
-       │ joint torques                           │
-       ▼                                         │
-┌──────────────┐                                 │
-│   MuJoCo     │──► next observation ────────────┘
-│  Simulator   │
-└──────────────┘
-```
+<!-- Inline network diagram -->
+<div style="display:flex; gap:16px; align-items:flex-start; margin:16px 0;">
 
-### Network Architecture
+  <!-- ACTOR -->
+  <div style="flex:1; border:2px solid #1565c0; border-radius:10px; padding:16px 12px; background:#fff;">
+    <div style="text-align:center; margin-bottom:12px; padding-bottom:10px; border-bottom:2px solid #eee;">
+      <div style="font-size:17px; font-weight:700; color:#1565c0;">Actor</div>
+      <div style="font-size:11px; color:#999; font-family:monospace;">DiagGaussianActor</div>
+    </div>
+    <div style="background:#e3f2fd; border:1px solid #90caf9; color:#0d47a1; border-radius:6px; padding:8px; text-align:center; font-size:13px; margin-bottom:3px;"><b>Input</b> <code>56</code><br>base_obs(47) + action_history(3x3)</div>
+    <div style="text-align:center; color:#bbb;">↓</div>
+    <div style="background:#1565c0; color:#fff; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;">Linear(56 → 512) + ReLU</div>
+    <div style="text-align:center; color:#bbb;">↓</div>
+    <div style="background:#1565c0; color:#fff; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;">Linear(512 → 512) + ReLU</div>
+    <div style="text-align:center; color:#bbb;">↓</div>
+    <div style="background:#1565c0; color:#fff; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;">Linear(512 → 256) + ReLU</div>
+    <div style="text-align:center; color:#bbb;">↓</div>
+    <div style="background:#1565c0; color:#fff; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;">Linear(256 → 6)</div>
+    <div style="text-align:center; color:#bbb;">↓</div>
+    <div style="background:#fff8e1; border:1px solid #ffca28; color:#6d4c00; border-radius:6px; padding:8px; text-align:center; font-size:12px; margin-bottom:3px;"><b>Split → μ(3), log_σ(3)</b><br>log_σ = tanh → clamp [−2, 2]</div>
+    <div style="text-align:center; color:#bbb;">↓</div>
+    <div style="background:#2e7d32; color:#fff; border-radius:6px; padding:8px; text-align:center; font-size:13px; font-weight:700;">Output: SquashedNormal → tanh<br>[vx, vy, ω] ∈ [−1, 1]³</div>
+  </div>
 
-The full architecture diagram is available as an interactive HTML page: [assets/architecture.html](assets/architecture.html).
+  <!-- CRITIC Q1 -->
+  <div style="flex:1; border:2px solid #c62828; border-radius:10px; padding:16px 12px; background:#fff;">
+    <div style="text-align:center; margin-bottom:12px; padding-bottom:10px; border-bottom:2px solid #eee;">
+      <div style="font-size:17px; font-weight:700; color:#c62828;">Critic Q₁</div>
+      <div style="font-size:11px; color:#999; font-family:monospace;">DoubleQCritic — network 1</div>
+    </div>
+    <div style="background:#ffebee; border:1px solid #ef9a9a; color:#b71c1c; border-radius:6px; padding:8px; text-align:center; font-size:13px; margin-bottom:3px;"><b>Observation</b> <code>201</code><br>critic_base(49) × 4 frames + top_k(5)</div>
+    <div style="height:4px;"></div>
+    <div style="background:#e8f5e9; border:1px solid #a5d6a7; color:#1b5e20; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;"><b>Action</b> <code>3</code> — from Actor</div>
+    <div style="text-align:center; color:#bbb; font-size:12px;">concat ↓</div>
+    <div style="background:#fffde7; border:1px solid #fff176; color:#f57f17; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;"><b>Concatenated</b> <code>204</code></div>
+    <div style="text-align:center; color:#bbb;">↓</div>
+    <div style="background:#c62828; color:#fff; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;">Linear(204 → 512) + ReLU</div>
+    <div style="text-align:center; color:#bbb;">↓</div>
+    <div style="background:#c62828; color:#fff; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;">Linear(512 → 512) + ReLU</div>
+    <div style="text-align:center; color:#bbb;">↓</div>
+    <div style="background:#c62828; color:#fff; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;">Linear(512 → 256) + ReLU</div>
+    <div style="text-align:center; color:#bbb;">↓</div>
+    <div style="background:#c62828; color:#fff; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;">Linear(256 → 1)</div>
+    <div style="text-align:center; color:#bbb;">↓</div>
+    <div style="background:#2e7d32; color:#fff; border-radius:6px; padding:8px; text-align:center; font-size:13px; font-weight:700;">Output: Q₁(s, a) → scalar</div>
+  </div>
 
-| Network | Input | Hidden layers | Output |
-|---|---|---|---|
-| Actor | 56 dims | 512 → 512 → 256 (ReLU) | 6 → split into μ(3), log_σ(3) → SquashedNormal |
-| Critic Q₁ | 204 dims (obs + action) | 512 → 512 → 256 (ReLU) | 1 (Q-value) |
-| Critic Q₂ | 204 dims (obs + action) | 512 → 512 → 256 (ReLU) | 1 (Q-value) |
+  <!-- CRITIC Q2 -->
+  <div style="flex:1; border:2px solid #e65100; border-radius:10px; padding:16px 12px; background:#fff;">
+    <div style="text-align:center; margin-bottom:12px; padding-bottom:10px; border-bottom:2px solid #eee;">
+      <div style="font-size:17px; font-weight:700; color:#e65100;">Critic Q₂</div>
+      <div style="font-size:11px; color:#999; font-family:monospace;">DoubleQCritic — network 2</div>
+    </div>
+    <div style="background:#fff3e0; border:1px solid #ffcc80; color:#bf360c; border-radius:6px; padding:8px; text-align:center; font-size:13px; margin-bottom:3px;"><b>Observation</b> <code>201</code><br>critic_base(49) × 4 frames + top_k(5)</div>
+    <div style="height:4px;"></div>
+    <div style="background:#e8f5e9; border:1px solid #a5d6a7; color:#1b5e20; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;"><b>Action</b> <code>3</code> — from Actor</div>
+    <div style="text-align:center; color:#bbb; font-size:12px;">concat ↓</div>
+    <div style="background:#fffde7; border:1px solid #fff176; color:#f57f17; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;"><b>Concatenated</b> <code>204</code></div>
+    <div style="text-align:center; color:#bbb;">↓</div>
+    <div style="background:#e65100; color:#fff; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;">Linear(204 → 512) + ReLU</div>
+    <div style="text-align:center; color:#bbb;">↓</div>
+    <div style="background:#e65100; color:#fff; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;">Linear(512 → 512) + ReLU</div>
+    <div style="text-align:center; color:#bbb;">↓</div>
+    <div style="background:#e65100; color:#fff; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;">Linear(512 → 256) + ReLU</div>
+    <div style="text-align:center; color:#bbb;">↓</div>
+    <div style="background:#e65100; color:#fff; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;">Linear(256 → 1)</div>
+    <div style="text-align:center; color:#bbb;">↓</div>
+    <div style="background:#2e7d32; color:#fff; border-radius:6px; padding:8px; text-align:center; font-size:13px; font-weight:700;">Output: Q₂(s, a) → scalar</div>
+  </div>
 
-The critic uses **clipped double-Q**: `min(Q₁, Q₂)` is used for the actor update.
+</div>
+
+<div style="text-align:center; margin:12px 0; padding:8px; background:#f5f5f5; border:1px dashed #ccc; border-radius:8px; font-size:13px; color:#444;">
+  Actor update uses <b>min(Q₁, Q₂)</b> — clipped double-Q to reduce value overestimation
+</div>
+
+<div style="display:flex; gap:0; margin:16px 0; border:1px solid #ddd; border-radius:8px; overflow:hidden; font-size:12px; text-align:center;">
+  <div style="flex:1; padding:8px; background:#e3f2fd; color:#0d47a1;"><b>α (temperature)</b><br>learnable, init = 0.2</div>
+  <div style="flex:1; padding:8px; background:#ffebee; color:#b71c1c; border-left:1px solid #ddd;"><b>Target critic</b><br>soft update τ = 0.005</div>
+  <div style="flex:1; padding:8px; background:#e8f5e9; color:#1b5e20; border-left:1px solid #ddd;"><b>Weight init</b><br>Orthogonal</div>
+  <div style="flex:1; padding:8px; background:#fff8e1; color:#e65100; border-left:1px solid #ddd;"><b>Target entropy</b><br>−3</div>
+  <div style="flex:1; padding:8px; background:#f3e5f5; color:#6a1b9a; border-left:1px solid #ddd;"><b>Discount γ</b><br>0.99</div>
+</div>
 
 ---
 
@@ -122,50 +172,41 @@ The critic uses **clipped double-Q**: `min(Q₁, Q₂)` is used for the actor up
 
 The project uses **asymmetric observations**: the actor sees only sensor data available on a real robot (with noise), while the critic sees clean privileged data with additional features.
 
-### Actor observation (47 → 56 dims)
+<details>
+<summary><b>Actor observation breakdown (47 → 56 dims)</b></summary>
 
-| # | Component | Dim | Normalization |
-|---|---|---|---|
-| 1 | LiDAR sectors | 40 | `[0, max_range]` → `[-1, 1]` |
-| 2 | Angular velocity ω | 1 | `/ max_angular_vel` |
-| 3 | sin(angle to target) | 1 | clipped `[-1, 1]` |
-| 4 | cos(angle to target) | 1 | clipped `[-1, 1]` |
-| 5 | Distance to target | 1 | `[0, max_dist]` → `[-1, 1]` |
-| 6 | Previous action `[vx, vy, ω]` | 3 | clipped `[-1, 1]` |
-| | **Base total** | **47** | |
-| 7 | Action history (last 3 steps × 3) | 9 | appended to base |
-| | **Actor network input** | **56** | |
+<table style="width:100%; border-collapse:collapse; font-size:13px; border:1px solid #ddd; margin-top:8px;">
+  <tr style="background:#f5f5f5;"><th style="padding:8px; text-align:left; border-bottom:2px solid #ccc; color:#555;">#</th><th style="padding:8px; text-align:left; border-bottom:2px solid #ccc; color:#555;">Component</th><th style="padding:8px; text-align:center; border-bottom:2px solid #ccc; color:#555;">Dim</th><th style="padding:8px; text-align:left; border-bottom:2px solid #ccc; color:#555;">Normalization / Notes</th></tr>
+  <tr><td style="padding:7px 10px;">1</td><td style="padding:7px 10px;">LiDAR sectors (40 beams, min-pooled)</td><td style="padding:7px 10px; text-align:center; font-weight:700; color:#1565c0; font-family:monospace; font-size:14px;">40</td><td style="padding:7px 10px; color:#888; font-size:12px;">[0, 3m] → [−1, 1], noise σ = 0.02 m</td></tr>
+  <tr><td style="padding:7px 10px;">2</td><td style="padding:7px 10px;">Angular velocity ω</td><td style="padding:7px 10px; text-align:center; font-weight:700; color:#1565c0; font-family:monospace; font-size:14px;">1</td><td style="padding:7px 10px; color:#888; font-size:12px;">÷ max_angular_vel, noise σ = 0.02 rad/s</td></tr>
+  <tr><td style="padding:7px 10px;">3</td><td style="padding:7px 10px;">sin(angle to target)</td><td style="padding:7px 10px; text-align:center; font-weight:700; color:#1565c0; font-family:monospace; font-size:14px;">1</td><td style="padding:7px 10px; color:#888; font-size:12px;">clipped [−1, 1], noise σ = 0.05 rad</td></tr>
+  <tr><td style="padding:7px 10px;">4</td><td style="padding:7px 10px;">cos(angle to target)</td><td style="padding:7px 10px; text-align:center; font-weight:700; color:#1565c0; font-family:monospace; font-size:14px;">1</td><td style="padding:7px 10px; color:#888; font-size:12px;">clipped [−1, 1], noise σ = 0.05 rad</td></tr>
+  <tr><td style="padding:7px 10px;">5</td><td style="padding:7px 10px;">Distance to target</td><td style="padding:7px 10px; text-align:center; font-weight:700; color:#1565c0; font-family:monospace; font-size:14px;">1</td><td style="padding:7px 10px; color:#888; font-size:12px;">[0, max_dist] → [−1, 1], noise σ = 0.05 m</td></tr>
+  <tr><td style="padding:7px 10px;">6</td><td style="padding:7px 10px;">Previous action [vx, vy, ω]</td><td style="padding:7px 10px; text-align:center; font-weight:700; color:#1565c0; font-family:monospace; font-size:14px;">3</td><td style="padding:7px 10px; color:#888; font-size:12px;">clipped [−1, 1]</td></tr>
+  <tr style="background:#f5f5f5; font-weight:700; border-top:1px solid #ddd;"><td style="padding:7px 10px;"></td><td style="padding:7px 10px;">Base observation</td><td style="padding:7px 10px; text-align:center; color:#1565c0; font-family:monospace; font-size:14px;">47</td><td style="padding:7px 10px;"></td></tr>
+  <tr><td style="padding:7px 10px;">7</td><td style="padding:7px 10px;">Action history (last 3 steps × 3 dims)</td><td style="padding:7px 10px; text-align:center; font-weight:700; color:#1565c0; font-family:monospace; font-size:14px;">9</td><td style="padding:7px 10px; color:#888; font-size:12px;">appended to base</td></tr>
+  <tr style="background:#f5f5f5; font-weight:700; border-top:1px solid #ddd;"><td style="padding:7px 10px;"></td><td style="padding:7px 10px;">Actor network input</td><td style="padding:7px 10px; text-align:center; color:#1565c0; font-family:monospace; font-size:14px;">56</td><td style="padding:7px 10px;"></td></tr>
+</table>
 
-During training, **observation noise** is injected for sim-to-real transfer:
+</details>
 
-| Signal | Noise σ |
-|---|---|
-| Distance to target | 0.05 m |
-| Angle to target | 0.05 rad (~3°) |
-| Angular velocity | 0.02 rad/s |
-| LiDAR | 0.02 m |
+<details>
+<summary><b>Critic observation breakdown (49 → 201 dims)</b></summary>
 
-### Critic observation (49 → 201 dims)
+<table style="width:100%; border-collapse:collapse; font-size:13px; border:1px solid #ddd; margin-top:8px;">
+  <tr style="background:#f5f5f5;"><th style="padding:8px; text-align:left; border-bottom:2px solid #ccc; color:#555;">#</th><th style="padding:8px; text-align:left; border-bottom:2px solid #ccc; color:#555;">Component</th><th style="padding:8px; text-align:center; border-bottom:2px solid #ccc; color:#555;">Dim</th><th style="padding:8px; text-align:left; border-bottom:2px solid #ccc; color:#555;">Notes</th></tr>
+  <tr><td style="padding:7px 10px;">1</td><td style="padding:7px 10px;">Actor base observation (clean, no noise)</td><td style="padding:7px 10px; text-align:center; font-weight:700; color:#c62828; font-family:monospace; font-size:14px;">47</td><td style="padding:7px 10px; color:#888; font-size:12px;">Same features, zero noise</td></tr>
+  <tr style="background:#fff8f8;"><td style="padding:7px 10px;">2</td><td style="padding:7px 10px;">Forward velocity vx</td><td style="padding:7px 10px; text-align:center; font-weight:700; color:#c62828; font-family:monospace; font-size:14px;">1</td><td style="padding:7px 10px; color:#888; font-size:12px;">Privileged — not available to actor</td></tr>
+  <tr style="background:#fff8f8;"><td style="padding:7px 10px;">3</td><td style="padding:7px 10px;">Lateral velocity vy</td><td style="padding:7px 10px; text-align:center; font-weight:700; color:#c62828; font-family:monospace; font-size:14px;">1</td><td style="padding:7px 10px; color:#888; font-size:12px;">Privileged — not available to actor</td></tr>
+  <tr style="background:#f5f5f5; font-weight:700; border-top:1px solid #ddd;"><td style="padding:7px 10px;"></td><td style="padding:7px 10px;">Critic base (single frame)</td><td style="padding:7px 10px; text-align:center; color:#c62828; font-family:monospace; font-size:14px;">49</td><td style="padding:7px 10px;"></td></tr>
+  <tr><td style="padding:7px 10px;">4</td><td style="padding:7px 10px;">History stacking: 4 frames (t, t−1, t−2, t−3)</td><td style="padding:7px 10px; text-align:center; font-weight:700; color:#c62828; font-family:monospace; font-size:14px;">196</td><td style="padding:7px 10px; color:#888; font-size:12px;">49 × 4 = 196</td></tr>
+  <tr style="background:#fff8f8;"><td style="padding:7px 10px;">5</td><td style="padding:7px 10px;">Top-5 nearest LiDAR distances</td><td style="padding:7px 10px; text-align:center; font-weight:700; color:#c62828; font-family:monospace; font-size:14px;">5</td><td style="padding:7px 10px; color:#888; font-size:12px;">Privileged: sorted raw beams, normalized</td></tr>
+  <tr style="background:#f5f5f5; font-weight:700; border-top:1px solid #ddd;"><td style="padding:7px 10px;"></td><td style="padding:7px 10px;">Critic observation input</td><td style="padding:7px 10px; text-align:center; color:#c62828; font-family:monospace; font-size:14px;">201</td><td style="padding:7px 10px;"></td></tr>
+  <tr><td style="padding:7px 10px;">6</td><td style="padding:7px 10px;">Action [vx, vy, ω] (concat by Q-network)</td><td style="padding:7px 10px; text-align:center; font-weight:700; color:#c62828; font-family:monospace; font-size:14px;">3</td><td style="padding:7px 10px; color:#888; font-size:12px;">From actor output</td></tr>
+  <tr style="background:#f5f5f5; font-weight:700; border-top:1px solid #ddd;"><td style="padding:7px 10px;"></td><td style="padding:7px 10px;">Q-network first Linear input</td><td style="padding:7px 10px; text-align:center; color:#c62828; font-family:monospace; font-size:14px;">204</td><td style="padding:7px 10px;"></td></tr>
+</table>
 
-The critic builds on the actor observation but with **no noise** (clean privileged data) and additional features:
-
-| # | Component | Dim | Notes |
-|---|---|---|---|
-| 1 | Actor base observation (clean) | 47 | Same layout, zero noise |
-| 2 | Forward velocity vx | 1 | **Privileged** — not available to actor |
-| 3 | Lateral velocity vy | 1 | **Privileged** — not available to actor |
-| | **Critic base (single frame)** | **49** | |
-| 4 | History stacking: 4 frames (t, t−1, t−2, t−3) | 196 | 49 × 4 |
-| 5 | Top-5 nearest LiDAR distances | 5 | **Privileged**: sorted raw beams, normalized |
-| | **Critic network input** | **201** | + action(3) = 204 into Q-network |
-
-```
-Actor  input = base_obs(47) + action_history(3 × 3)                     = 56  dims
-Critic input = base_obs(49) × 4 frames + top_k(5) + action(3)           = 204 dims
-               └────────── 196 ──────────┘  └─5─┘    └─3─┘
-```
-
-The **top-5 features** are the 5 smallest raw LiDAR distances (normalized to `[-1, 1]`), giving the critic explicit awareness of the nearest obstacles for better value estimation.
+</details>
 
 ---
 
@@ -257,7 +298,7 @@ Full configuration: [configs/curriculum.yaml](configs/curriculum.yaml).
 
 <a id="hyperparameters"></a>
 
-## Hyperparameters
+## Initial Hyperparameters
 
 <details>
 <summary><b>Click to expand SAC hyperparameters table</b></summary>

@@ -1,4 +1,4 @@
-# SuperDog
+# 🐕 SuperDog
 
 **SuperDog** is a path-planning repository for the **Unitree A1** quadruped robot. A high-level **Soft Actor-Critic (SAC)** policy generates velocity commands, and a frozen pretrained walking policy converts them into 12-DOF joint torques. The robot navigates from a random spawn point to a goal in a room with randomly placed obstacles.
 
@@ -7,30 +7,40 @@
 > - Run & install instructions: [RUNME.md](RUNME.md)
 > - Robot config and SAC hyperparameters: [configs/a1.yaml](configs/a1.yaml)
 > - Curriculum learning schedule: [configs/curriculum.yaml](configs/curriculum.yaml)
+> - Prompt log for repository and documentation work: [PROMPTS.md](PROMPTS.md)
+> - MuJoCo documentation: [mujoco.readthedocs.io](https://mujoco.readthedocs.io/)
 
 <p align="center">
-  <img src="docs/photo_2026-03-26_04-57-41.jpg" alt="SuperDog simulation 1" width="45%" />
-  <img src="docs/photo_2026-03-26_04-57-54.jpg" alt="SuperDog simulation 2" width="45%" />
+  <img src="docs/Screencast from 03-26-2026 07-31-12 AM.gif" alt="SuperDog simulator result preview" width="45%" />
+  <img src="docs/image.png" alt="SuperDog control interface during sim2real" width="45%" />
 </p>
 
 <a id="table-of-contents"></a>
 
-## Table of Contents
+## 📑 Table of Contents
 
-1. [Overview](#overview)
-2. [Environment](#environment)
-3. [Architecture](#architecture)
-4. [Observation Space](#observation-space)
-5. [Action Space](#action-space)
-6. [Reward Function](#reward-function)
-7. [Curriculum Learning](#curriculum-learning)
-8. [Hyperparameters](#hyperparameters)
+1. [🎯 Overview](#overview)
+2. [🎮 Environment](#environment)
+3. [🧰 Main Dependencies and Project Entry Points](#dependencies)
+4. [🧠 Architecture](#architecture)
+5. [📐 Mathematical Formulation for SAC](#mathematical-formulation-for-sac)
+6. [🧾 SAC Training Pseudocode](#sac-training-pseudocode)
+7. [👁️ Observation Space](#observation-space)
+8. [🎛️ Action Space](#action-space)
+9. [🏁 Reward Function](#reward-function)
+10. [📈 Curriculum Learning](#curriculum-learning)
+11. [⚙️ Initial Hyperparameters](#hyperparameters)
+12. [🖼️ Experiments](#experiments)
+13. [🤖 Sim2Real](#sim2real)
+14. [⚙️ Commands](#commands)
+15. [💬 Prompt Log](#prompt-log)
+16. [📚 References](#references)
 
 ---
 
 <a id="overview"></a>
 
-## Overview
+## 🎯 Overview
 
 SuperDog trains a navigation policy through **curriculum learning** across 7 difficulty levels, progressively increasing obstacle count and tightening reward shaping.
 
@@ -38,7 +48,7 @@ SuperDog trains a navigation policy through **curriculum learning** across 7 dif
 
 | Layer | Role | Frequency |
 |---|---|---|
-| SAC Actor | Generates `[vx, vy, ω]` velocity command | 10 Hz (configurable) |
+| SAC Actor | Generates `[vx, vy, ω]` velocity command | 5 Hz by default (configurable) |
 | Walking Policy | Converts command to 12 joint torques | 50 Hz |
 | MuJoCo Simulator | Physics step | 500 Hz |
 
@@ -55,7 +65,7 @@ SuperDog trains a navigation policy through **curriculum learning** across 7 dif
 
 <a id="environment"></a>
 
-## Environment
+## 🎮 Environment
 
 <p align="center">
   <img src="docs/photo_2026-03-26_04-57-41.jpg" alt="Environment with obstacles" width="45%" />
@@ -74,137 +84,362 @@ SuperDog trains a navigation policy through **curriculum learning** across 7 dif
 
 ---
 
+<a id="dependencies"></a>
+
+## 🧰 Main Dependencies and Project Entry Points
+
+### Main runtime dependencies
+
+| Dependency | Definition |
+| --- | --- |
+| `python` | Main runtime for training, evaluation, export, and utility scripts |
+| `torch` | Deep learning framework used to implement SAC actor and critic networks |
+| `mujoco` | Physics simulator for Unitree A1 and obstacle-rich navigation scenes |
+| `numpy` | Numerical array library used across reward, observation, LiDAR, and curriculum logic |
+| `tensorboard` | Logging backend for training metrics and experiment analysis |
+| `pyyaml` | YAML parser for robot, reward, and curriculum configuration |
+| `rsl-rl-lib` | Supporting locomotion and policy-related components used by the project |
+
+### Key files
+
+| File | Purpose |
+| --- | --- |
+| [RUNME.md](RUNME.md) | Installation and exact run commands |
+| [PROMPTS.md](PROMPTS.md) | Prompt log for documentation and repository refinement |
+| [configs/a1.yaml](configs/a1.yaml) | Base robot, SAC, reward, LiDAR, and training configuration |
+| [configs/curriculum.yaml](configs/curriculum.yaml) | Curriculum levels and per-level overrides |
+| [scripts/train.py](scripts/train.py) | Main training and evaluation entry point |
+| [scripts/export_to_onnx.py](scripts/export_to_onnx.py) | Actor export for deployment-oriented inference |
+| [scripts/inference_onnx.py](scripts/inference_onnx.py) | ONNX inference path |
+
+### Minimal command path
+
+```bash
+cd last_project/SuperDog
+pip install -e .
+python scripts/train.py configs/a1.yaml --train --headless
+```
+
+For the full command list and troubleshooting notes, use [RUNME.md](RUNME.md).
+
+---
+
 <a id="architecture"></a>
 
-## Architecture
+## 🧠 Architecture
 
 The architecture uses **asymmetric actor-critic**: the critic receives additional privileged information (velocity, obstacle proximity) that the actor does not see — enabling better value estimation while the actor remains deployable on a real robot with limited sensors.
 
-<!-- Inline network diagram -->
-<div style="display:flex; gap:16px; align-items:flex-start; margin:16px 0;">
+<p align="center">
+  <img src="docs/network_architecture.jpg" alt="SuperDog SAC actor-critic network architecture" width="92%" />
+</p>
 
-  <!-- ACTOR -->
-  <div style="flex:1; border:2px solid #1565c0; border-radius:10px; padding:16px 12px; background:#fff;">
-    <div style="text-align:center; margin-bottom:12px; padding-bottom:10px; border-bottom:2px solid #eee;">
-      <div style="font-size:17px; font-weight:700; color:#1565c0;">Actor</div>
-      <div style="font-size:11px; color:#999; font-family:monospace;">DiagGaussianActor</div>
-    </div>
-    <div style="background:#e3f2fd; border:1px solid #90caf9; color:#0d47a1; border-radius:6px; padding:8px; text-align:center; font-size:13px; margin-bottom:3px;"><b>Input</b> <code>56</code><br>base_obs(47) + action_history(3x3)</div>
-    <div style="text-align:center; color:#bbb;">↓</div>
-    <div style="background:#1565c0; color:#fff; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;">Linear(56 → 512) + ReLU</div>
-    <div style="text-align:center; color:#bbb;">↓</div>
-    <div style="background:#1565c0; color:#fff; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;">Linear(512 → 512) + ReLU</div>
-    <div style="text-align:center; color:#bbb;">↓</div>
-    <div style="background:#1565c0; color:#fff; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;">Linear(512 → 256) + ReLU</div>
-    <div style="text-align:center; color:#bbb;">↓</div>
-    <div style="background:#1565c0; color:#fff; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;">Linear(256 → 6)</div>
-    <div style="text-align:center; color:#bbb;">↓</div>
-    <div style="background:#fff8e1; border:1px solid #ffca28; color:#6d4c00; border-radius:6px; padding:8px; text-align:center; font-size:12px; margin-bottom:3px;"><b>Split → μ(3), log_σ(3)</b><br>log_σ = tanh → clamp [−2, 2]</div>
-    <div style="text-align:center; color:#bbb;">↓</div>
-    <div style="background:#2e7d32; color:#fff; border-radius:6px; padding:8px; text-align:center; font-size:13px; font-weight:700;">Output: SquashedNormal → tanh<br>[vx, vy, ω] ∈ [−1, 1]³</div>
-  </div>
+The actor predicts the high-level command, while the two critic networks estimate soft action values from a richer privileged state. The implementation follows the standard clipped double-Q SAC design, uses a squashed Gaussian policy, and updates target critics with soft Polyak averaging.
 
-  <!-- CRITIC Q1 -->
-  <div style="flex:1; border:2px solid #c62828; border-radius:10px; padding:16px 12px; background:#fff;">
-    <div style="text-align:center; margin-bottom:12px; padding-bottom:10px; border-bottom:2px solid #eee;">
-      <div style="font-size:17px; font-weight:700; color:#c62828;">Critic Q₁</div>
-      <div style="font-size:11px; color:#999; font-family:monospace;">DoubleQCritic — network 1</div>
-    </div>
-    <div style="background:#ffebee; border:1px solid #ef9a9a; color:#b71c1c; border-radius:6px; padding:8px; text-align:center; font-size:13px; margin-bottom:3px;"><b>Observation</b> <code>201</code><br>critic_base(49) × 4 frames + top_k(5)</div>
-    <div style="height:4px;"></div>
-    <div style="background:#e8f5e9; border:1px solid #a5d6a7; color:#1b5e20; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;"><b>Action</b> <code>3</code> — from Actor</div>
-    <div style="text-align:center; color:#bbb; font-size:12px;">concat ↓</div>
-    <div style="background:#fffde7; border:1px solid #fff176; color:#f57f17; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;"><b>Concatenated</b> <code>204</code></div>
-    <div style="text-align:center; color:#bbb;">↓</div>
-    <div style="background:#c62828; color:#fff; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;">Linear(204 → 512) + ReLU</div>
-    <div style="text-align:center; color:#bbb;">↓</div>
-    <div style="background:#c62828; color:#fff; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;">Linear(512 → 512) + ReLU</div>
-    <div style="text-align:center; color:#bbb;">↓</div>
-    <div style="background:#c62828; color:#fff; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;">Linear(512 → 256) + ReLU</div>
-    <div style="text-align:center; color:#bbb;">↓</div>
-    <div style="background:#c62828; color:#fff; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;">Linear(256 → 1)</div>
-    <div style="text-align:center; color:#bbb;">↓</div>
-    <div style="background:#2e7d32; color:#fff; border-radius:6px; padding:8px; text-align:center; font-size:13px; font-weight:700;">Output: Q₁(s, a) → scalar</div>
-  </div>
+---
 
-  <!-- CRITIC Q2 -->
-  <div style="flex:1; border:2px solid #e65100; border-radius:10px; padding:16px 12px; background:#fff;">
-    <div style="text-align:center; margin-bottom:12px; padding-bottom:10px; border-bottom:2px solid #eee;">
-      <div style="font-size:17px; font-weight:700; color:#e65100;">Critic Q₂</div>
-      <div style="font-size:11px; color:#999; font-family:monospace;">DoubleQCritic — network 2</div>
-    </div>
-    <div style="background:#fff3e0; border:1px solid #ffcc80; color:#bf360c; border-radius:6px; padding:8px; text-align:center; font-size:13px; margin-bottom:3px;"><b>Observation</b> <code>201</code><br>critic_base(49) × 4 frames + top_k(5)</div>
-    <div style="height:4px;"></div>
-    <div style="background:#e8f5e9; border:1px solid #a5d6a7; color:#1b5e20; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;"><b>Action</b> <code>3</code> — from Actor</div>
-    <div style="text-align:center; color:#bbb; font-size:12px;">concat ↓</div>
-    <div style="background:#fffde7; border:1px solid #fff176; color:#f57f17; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;"><b>Concatenated</b> <code>204</code></div>
-    <div style="text-align:center; color:#bbb;">↓</div>
-    <div style="background:#e65100; color:#fff; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;">Linear(204 → 512) + ReLU</div>
-    <div style="text-align:center; color:#bbb;">↓</div>
-    <div style="background:#e65100; color:#fff; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;">Linear(512 → 512) + ReLU</div>
-    <div style="text-align:center; color:#bbb;">↓</div>
-    <div style="background:#e65100; color:#fff; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;">Linear(512 → 256) + ReLU</div>
-    <div style="text-align:center; color:#bbb;">↓</div>
-    <div style="background:#e65100; color:#fff; border-radius:6px; padding:7px; text-align:center; font-size:13px; margin-bottom:3px;">Linear(256 → 1)</div>
-    <div style="text-align:center; color:#bbb;">↓</div>
-    <div style="background:#2e7d32; color:#fff; border-radius:6px; padding:8px; text-align:center; font-size:13px; font-weight:700;">Output: Q₂(s, a) → scalar</div>
-  </div>
+<a id="mathematical-formulation-for-sac"></a>
 
-</div>
+## 📐 Mathematical Formulation for SAC
 
-<div style="text-align:center; margin:12px 0; padding:8px; background:#f5f5f5; border:1px dashed #ccc; border-radius:8px; font-size:13px; color:#444;">
-  Actor update uses <b>min(Q₁, Q₂)</b> — clipped double-Q to reduce value overestimation
-</div>
+Before the equations, we define the symbols once and keep the notation consistent throughout this section.
 
-<div style="display:flex; gap:0; margin:16px 0; border:1px solid #ddd; border-radius:8px; overflow:hidden; font-size:12px; text-align:center;">
-  <div style="flex:1; padding:8px; background:#e3f2fd; color:#0d47a1;"><b>α (temperature)</b><br>learnable, init = 0.2</div>
-  <div style="flex:1; padding:8px; background:#ffebee; color:#b71c1c; border-left:1px solid #ddd;"><b>Target critic</b><br>soft update τ = 0.005</div>
-  <div style="flex:1; padding:8px; background:#e8f5e9; color:#1b5e20; border-left:1px solid #ddd;"><b>Weight init</b><br>Orthogonal</div>
-  <div style="flex:1; padding:8px; background:#fff8e1; color:#e65100; border-left:1px solid #ddd;"><b>Target entropy</b><br>−3</div>
-  <div style="flex:1; padding:8px; background:#f3e5f5; color:#6a1b9a; border-left:1px solid #ddd;"><b>Discount γ</b><br>0.99</div>
-</div>
+### 1. Symbols and definitions
+
+- $S_t$ is the state at time step $t$.
+- $A_t$ is the action sampled at time step $t$.
+- $R_t := r(S_t, A_t)$ is the reward received after taking action $A_t$ in state $S_t$.
+- $S_{t+1} \sim P(\cdot \mid S_t, A_t)$ is the next state produced by the environment dynamics.
+- $A_{t+1} \sim \pi(\cdot \mid S_{t+1})$ is the next action sampled from the current policy.
+- $\pi(a \mid s)$ is the stochastic policy.
+- $q^w(s, a)$ is the critic, parameterized by weights $w$.
+- $q^{w_{\text{target}}}(s, a)$ is the target critic used in the bootstrap term.
+- $J^\pi(s)$ is the soft value of state $s$ under policy $\pi$.
+- $\gamma$ is the discount factor.
+- $\eta$ is the temperature parameter that controls entropy regularization.
+- $\alpha_t$ is the actor learning-rate step at update $t$.
+- $\theta$ are the actor parameters.
+- $\mathbb{A}$ is the action space.
+- $\tau$ is the Polyak averaging coefficient used for target-network updates.
+
+---
+
+### 2. Soft value and Bellman operator
+
+The soft state value is defined before it is used in the Bellman operator:
+
+$$
+J^\pi(s) := \mathbb{E}_{A \sim \pi(\cdot \mid s)} \left[q^w(s, A) - \eta \ln \pi(A \mid s)\right]
+$$
+
+Using that value, the Bellman operator for SAC is written as:
+
+$$
+\mathcal{P}^\pi[q^w](S_t, A_t)
+:=
+R_t
++
+\gamma \, \mathbb{E}_{S_{t+1} \sim P(\cdot \mid S_t, A_t)} \left[J^\pi(S_{t+1})\right]
+$$
+
+For sampled updates, the next-state soft value is approximated with the target critic:
+
+$$
+J^\pi(S_{t+1})
+\approx
+q^{w_{\text{target}}}(S_{t+1}, A_{t+1})
+-
+\eta \ln \pi(A_{t+1} \mid S_{t+1})
+$$
+
+where $A_{t+1} \sim \pi(\cdot \mid S_{t+1})$.
+
+The implementation uses two critic networks to reduce overestimation bias, but the notation here keeps a single symbol $q^w$ and a single target symbol $q^{w_{\text{target}}}$ for readability.
+
+---
+
+### 3. TD error and critic loss
+
+Following the lecture-style presentation, define the temporal-difference error first:
+
+$$
+\delta^w(S_t, A_t, S_{t+1}, A_{t+1})
+:=
+q^w(S_t, A_t)
+-
+R_t
+-
+\gamma
+\left(
+q^{w_{\text{target}}}(S_{t+1}, A_{t+1})
+-
+\eta \ln \pi(A_{t+1} \mid S_{t+1})
+\right)
+$$
+
+The critic loss is then written directly through that TD error:
+
+$$
+L(w)
+=
+\mathbb{E}\left[\left(\delta^w(S_t, A_t, S_{t+1}, A_{t+1})\right)^2\right]
+$$
+
+This makes the structure explicit: the critic is trained so that the current estimate $q^w(S_t, A_t)$ matches the one-step soft Bellman target built from the next sampled action $A_{t+1}$.
+
+---
+
+### 4. Policy network (the actor)
+
+The actor is represented by a $\theta$-parametrized policy $\pi^\theta(a \mid s)$. In implementation form, the actor update follows the critic signal while also accounting for the entropy-regularized SAC objective:
+
+$$
+\theta_{t+1}
+\leftarrow
+\theta_t
++
+\alpha_t \nabla_\theta q^w(S_t, \pi^\theta(S_t))
+\big|_{\theta = \theta_t}
+$$
+
+This update encourages the policy to choose actions that receive higher soft action values under the critic.
+
+---
+
+### 5. SAC extension: entropy bonus
+
+SAC extends the standard return objective with an entropy bonus. Using $\mathcal{H}[\pi(\cdot \mid s)]$ to denote the policy entropy at state $s$, the global training objective is:
+
+$$
+\mathcal{J}_{\text{SAC}}(\pi)
+:=
+\sum_{t=0}^{\infty}
+\mathbb{E}
+\left[
+R_t
++
+\eta \mathcal{H}[\pi(\cdot \mid S_t)]
+\right]
+$$
+
+with entropy defined as:
+
+$$
+\mathcal{H}[\pi(\cdot \mid s)]
+:=
+-
+\mathbb{E}_{A \sim \pi(\cdot \mid s)}
+\left[\ln \pi(A \mid s)\right]
+$$
+
+This is the term that keeps the policy exploratory early in training and helps it avoid collapsing too quickly to a narrow action distribution.
+
+---
+
+### 6. Change of variables
+
+Let $u$ denote the raw Gaussian action sample before squashing, and let $a := \tanh(u)$ be the final bounded action sent to the environment. Because the transformation changes density, the log-probability must be corrected through the change-of-variables rule:
+
+$$
+p(y) = \frac{p(x)}{|f'(x)|}
+\quad \Longrightarrow \quad
+\ln p(y) = \ln p(x) - \ln |f'(x)|
+$$
+
+For $f(u) = \tanh(u)$, the derivative is $f'(u) = 1 - \tanh^2(u)$. The density correction used in the policy is therefore:
+
+$$
+\ln \pi(a \mid s)
+=
+\ln \mu(u \mid s)
+-
+\sum_{i=1}^{D} \ln \left(1 - \tanh^2(u_i)\right)
+$$
+
+where $D$ is the action dimension.
+
+---
+
+### 7. SAC extension: automatic entropy tuning
+
+To adapt the entropy weight automatically, SAC optimizes the temperature $\eta$ toward a target entropy $\bar{\mathcal{H}}$:
+
+$$
+J(\eta)
+=
+\mathbb{E}_{A \sim \pi(\cdot \mid s)}
+\left[
+-\eta \left(\ln \pi(A \mid s) + \bar{\mathcal{H}}\right)
+\right]
+$$
+
+The target entropy heuristic is set from the action-space dimension:
+
+$$
+\bar{\mathcal{H}} = -\mathrm{dim}(\mathbb{A})
+$$
+
+In this project, entropy management is important during curriculum transitions, because a temporary push toward higher exploration can help the policy escape poor local behaviors after the environment becomes harder.
+
+---
+
+### 8. Target network updates
+
+To stabilize training, the target critic parameters are updated with Polyak averaging:
+
+$$
+w_{\text{target}}
+\leftarrow
+\tau w
++
+(1 - \tau) w_{\text{target}}
+$$
+
+In the current configuration, the soft-update coefficient is $\tau = 0.005$.
+
+---
+
+<a id="sac-training-pseudocode"></a>
+
+## 🧾 SAC Training Pseudocode
+
+The listing below is intentionally based on the actual implementation in [src/policy/SAC/SAC.py](src/policy/SAC/SAC.py), [src/policy/SAC/SAC_actor.py](src/policy/SAC/SAC_actor.py), and [src/policy/SAC/SAC_critic.py](src/policy/SAC/SAC_critic.py). It matches the real repository logic rather than a generic textbook SAC loop.
+
+### Definitions used in the listing
+
+- `critic_obs_t` is the replay-buffer observation used by the critic, including privileged features and optional stacked history.
+- `actor_obs_t` is the actor-visible observation obtained from `critic_obs_t` after removing privileged critic-only features and appending action-history features when enabled.
+- `Q1` and `Q2` are the two outputs of the `DoubleQCritic` module.
+- `alpha = exp(log_alpha)` is the learnable temperature used in entropy regularization.
+- `soft_update_params(...)` is the Polyak target-network update utility from the codebase.
+
+### Pseudocode
+
+```text
+initialize actor πθ
+initialize critic with two Q-heads: Q1w, Q2w
+initialize target critic with the same weights as critic
+initialize learnable log_alpha
+
+for each training step:
+    sample weighted batch from replay buffer:
+        (critic_obs_t, action_t, reward_t, done_t, critic_obs_t+1)
+
+    build actor_obs_t from critic_obs_t
+    build actor_obs_t+1 from critic_obs_t+1
+
+    with no gradient:
+        dist_t+1 = actor(actor_obs_t+1)
+        action_t+1 = dist_t+1.rsample()
+        log_prob_t+1 = sum(dist_t+1.log_prob(action_t+1))
+
+        target_Q1, target_Q2 = target_critic(critic_obs_t+1, action_t+1)
+        target_V = min(target_Q1, target_Q2) - alpha * log_prob_t+1
+        target_Q = reward_t + (1 - done_t) * gamma * target_V
+
+    current_Q1, current_Q2 = critic(critic_obs_t, action_t)
+    critic_loss = mse(current_Q1, target_Q) + mse(current_Q2, target_Q)
+    update critic parameters with critic_loss
+
+    if step mod actor_update_frequency == 0:
+        dist_t = actor(actor_obs_t)
+        sampled_action_t = dist_t.rsample()
+        log_prob_t = sum(dist_t.log_prob(sampled_action_t))
+
+        actor_Q1, actor_Q2 = critic(critic_obs_t, sampled_action_t)
+        actor_Q = min(actor_Q1, actor_Q2)
+        actor_loss = mean(alpha.detach() * log_prob_t - actor_Q)
+        update actor parameters with actor_loss
+
+        if temperature is learnable:
+            alpha_loss = mean(alpha * (-log_prob_t - target_entropy).detach())
+            update log_alpha with alpha_loss
+
+    if step mod critic_target_update_frequency == 0:
+        soft-update target critic with tau
+```
+
+This is the concrete training pattern used in SuperDog: two critic heads inside one critic module, reparameterized action sampling through `rsample()`, entropy-regularized targets, delayed target-network updates, and adaptive temperature learning.
 
 ---
 
 <a id="observation-space"></a>
 
-## Observation Space
+## 👁️ Observation Space
 
 The project uses **asymmetric observations**: the actor sees only sensor data available on a real robot (with noise), while the critic sees clean privileged data with additional features.
 
 <details>
 <summary><b>Actor observation breakdown (47 → 56 dims)</b></summary>
 
-<table style="width:100%; border-collapse:collapse; font-size:13px; border:1px solid #ddd; margin-top:8px;">
-  <tr style="background:#f5f5f5;"><th style="padding:8px; text-align:left; border-bottom:2px solid #ccc; color:#555;">#</th><th style="padding:8px; text-align:left; border-bottom:2px solid #ccc; color:#555;">Component</th><th style="padding:8px; text-align:center; border-bottom:2px solid #ccc; color:#555;">Dim</th><th style="padding:8px; text-align:left; border-bottom:2px solid #ccc; color:#555;">Normalization / Notes</th></tr>
-  <tr><td style="padding:7px 10px;">1</td><td style="padding:7px 10px;">LiDAR sectors (40 beams, min-pooled)</td><td style="padding:7px 10px; text-align:center; font-weight:700; color:#1565c0; font-family:monospace; font-size:14px;">40</td><td style="padding:7px 10px; color:#888; font-size:12px;">[0, 3m] → [−1, 1], noise σ = 0.02 m</td></tr>
-  <tr><td style="padding:7px 10px;">2</td><td style="padding:7px 10px;">Angular velocity ω</td><td style="padding:7px 10px; text-align:center; font-weight:700; color:#1565c0; font-family:monospace; font-size:14px;">1</td><td style="padding:7px 10px; color:#888; font-size:12px;">÷ max_angular_vel, noise σ = 0.02 rad/s</td></tr>
-  <tr><td style="padding:7px 10px;">3</td><td style="padding:7px 10px;">sin(angle to target)</td><td style="padding:7px 10px; text-align:center; font-weight:700; color:#1565c0; font-family:monospace; font-size:14px;">1</td><td style="padding:7px 10px; color:#888; font-size:12px;">clipped [−1, 1], noise σ = 0.05 rad</td></tr>
-  <tr><td style="padding:7px 10px;">4</td><td style="padding:7px 10px;">cos(angle to target)</td><td style="padding:7px 10px; text-align:center; font-weight:700; color:#1565c0; font-family:monospace; font-size:14px;">1</td><td style="padding:7px 10px; color:#888; font-size:12px;">clipped [−1, 1], noise σ = 0.05 rad</td></tr>
-  <tr><td style="padding:7px 10px;">5</td><td style="padding:7px 10px;">Distance to target</td><td style="padding:7px 10px; text-align:center; font-weight:700; color:#1565c0; font-family:monospace; font-size:14px;">1</td><td style="padding:7px 10px; color:#888; font-size:12px;">[0, max_dist] → [−1, 1], noise σ = 0.05 m</td></tr>
-  <tr><td style="padding:7px 10px;">6</td><td style="padding:7px 10px;">Previous action [vx, vy, ω]</td><td style="padding:7px 10px; text-align:center; font-weight:700; color:#1565c0; font-family:monospace; font-size:14px;">3</td><td style="padding:7px 10px; color:#888; font-size:12px;">clipped [−1, 1]</td></tr>
-  <tr style="background:#f5f5f5; font-weight:700; border-top:1px solid #ddd;"><td style="padding:7px 10px;"></td><td style="padding:7px 10px;">Base observation</td><td style="padding:7px 10px; text-align:center; color:#1565c0; font-family:monospace; font-size:14px;">47</td><td style="padding:7px 10px;"></td></tr>
-  <tr><td style="padding:7px 10px;">7</td><td style="padding:7px 10px;">Action history (last 3 steps × 3 dims)</td><td style="padding:7px 10px; text-align:center; font-weight:700; color:#1565c0; font-family:monospace; font-size:14px;">9</td><td style="padding:7px 10px; color:#888; font-size:12px;">appended to base</td></tr>
-  <tr style="background:#f5f5f5; font-weight:700; border-top:1px solid #ddd;"><td style="padding:7px 10px;"></td><td style="padding:7px 10px;">Actor network input</td><td style="padding:7px 10px; text-align:center; color:#1565c0; font-family:monospace; font-size:14px;">56</td><td style="padding:7px 10px;"></td></tr>
-</table>
+| # | Component | Dim | Normalization / Notes |
+| --- | --- | --- | --- |
+| 1 | LiDAR sectors (40 beams, min-pooled) | 40 | `[0, 3m] -> [-1, 1]`, noise `σ = 0.02 m` |
+| 2 | Angular velocity `ω` | 1 | Divide by `max_angular_vel`, noise `σ = 0.02 rad/s` |
+| 3 | `sin(angle to target)` | 1 | Clipped to `[-1, 1]`, noise `σ = 0.05 rad` |
+| 4 | `cos(angle to target)` | 1 | Clipped to `[-1, 1]`, noise `σ = 0.05 rad` |
+| 5 | Distance to target | 1 | `[0, max_dist] -> [-1, 1]`, noise `σ = 0.05 m` |
+| 6 | Previous action `[vx, vy, ω]` | 3 | Clipped to `[-1, 1]` |
+|  | Base observation | 47 | Actor-visible observation before history stacking |
+| 7 | Action history (last 3 steps × 3 dims) | 9 | Appended to the base observation |
+|  | Actor network input | 56 | Final actor input dimension |
 
 </details>
 
 <details>
 <summary><b>Critic observation breakdown (49 → 201 dims)</b></summary>
 
-<table style="width:100%; border-collapse:collapse; font-size:13px; border:1px solid #ddd; margin-top:8px;">
-  <tr style="background:#f5f5f5;"><th style="padding:8px; text-align:left; border-bottom:2px solid #ccc; color:#555;">#</th><th style="padding:8px; text-align:left; border-bottom:2px solid #ccc; color:#555;">Component</th><th style="padding:8px; text-align:center; border-bottom:2px solid #ccc; color:#555;">Dim</th><th style="padding:8px; text-align:left; border-bottom:2px solid #ccc; color:#555;">Notes</th></tr>
-  <tr><td style="padding:7px 10px;">1</td><td style="padding:7px 10px;">Actor base observation (clean, no noise)</td><td style="padding:7px 10px; text-align:center; font-weight:700; color:#c62828; font-family:monospace; font-size:14px;">47</td><td style="padding:7px 10px; color:#888; font-size:12px;">Same features, zero noise</td></tr>
-  <tr style="background:#fff8f8;"><td style="padding:7px 10px;">2</td><td style="padding:7px 10px;">Forward velocity vx</td><td style="padding:7px 10px; text-align:center; font-weight:700; color:#c62828; font-family:monospace; font-size:14px;">1</td><td style="padding:7px 10px; color:#888; font-size:12px;">Privileged — not available to actor</td></tr>
-  <tr style="background:#fff8f8;"><td style="padding:7px 10px;">3</td><td style="padding:7px 10px;">Lateral velocity vy</td><td style="padding:7px 10px; text-align:center; font-weight:700; color:#c62828; font-family:monospace; font-size:14px;">1</td><td style="padding:7px 10px; color:#888; font-size:12px;">Privileged — not available to actor</td></tr>
-  <tr style="background:#f5f5f5; font-weight:700; border-top:1px solid #ddd;"><td style="padding:7px 10px;"></td><td style="padding:7px 10px;">Critic base (single frame)</td><td style="padding:7px 10px; text-align:center; color:#c62828; font-family:monospace; font-size:14px;">49</td><td style="padding:7px 10px;"></td></tr>
-  <tr><td style="padding:7px 10px;">4</td><td style="padding:7px 10px;">History stacking: 4 frames (t, t−1, t−2, t−3)</td><td style="padding:7px 10px; text-align:center; font-weight:700; color:#c62828; font-family:monospace; font-size:14px;">196</td><td style="padding:7px 10px; color:#888; font-size:12px;">49 × 4 = 196</td></tr>
-  <tr style="background:#fff8f8;"><td style="padding:7px 10px;">5</td><td style="padding:7px 10px;">Top-5 nearest LiDAR distances</td><td style="padding:7px 10px; text-align:center; font-weight:700; color:#c62828; font-family:monospace; font-size:14px;">5</td><td style="padding:7px 10px; color:#888; font-size:12px;">Privileged: sorted raw beams, normalized</td></tr>
-  <tr style="background:#f5f5f5; font-weight:700; border-top:1px solid #ddd;"><td style="padding:7px 10px;"></td><td style="padding:7px 10px;">Critic observation input</td><td style="padding:7px 10px; text-align:center; color:#c62828; font-family:monospace; font-size:14px;">201</td><td style="padding:7px 10px;"></td></tr>
-  <tr><td style="padding:7px 10px;">6</td><td style="padding:7px 10px;">Action [vx, vy, ω] (concat by Q-network)</td><td style="padding:7px 10px; text-align:center; font-weight:700; color:#c62828; font-family:monospace; font-size:14px;">3</td><td style="padding:7px 10px; color:#888; font-size:12px;">From actor output</td></tr>
-  <tr style="background:#f5f5f5; font-weight:700; border-top:1px solid #ddd;"><td style="padding:7px 10px;"></td><td style="padding:7px 10px;">Q-network first Linear input</td><td style="padding:7px 10px; text-align:center; color:#c62828; font-family:monospace; font-size:14px;">204</td><td style="padding:7px 10px;"></td></tr>
-</table>
+| # | Component | Dim | Notes |
+| --- | --- | --- | --- |
+| 1 | Actor base observation (clean, no noise) | 47 | Same semantic features as the actor, but without observation noise |
+| 2 | Forward velocity `vx` | 1 | Privileged feature, not available to the actor |
+| 3 | Lateral velocity `vy` | 1 | Privileged feature, not available to the actor |
+|  | Critic base (single frame) | 49 | `47 + 2` privileged velocity terms |
+| 4 | History stacking: 4 frames `(t, t-1, t-2, t-3)` | 196 | `49 × 4 = 196` |
+| 5 | Top-5 nearest LiDAR distances | 5 | Privileged obstacle-awareness features derived from raw beams |
+|  | Critic observation input | 201 | Final critic observation before action concatenation |
+| 6 | Action `[vx, vy, ω]` (concat by Q-network) | 3 | Current actor output appended inside the Q-network |
+|  | Q-network first linear input | 204 | `201 + 3` |
 
 </details>
 
@@ -212,7 +447,7 @@ The project uses **asymmetric observations**: the actor sees only sensor data av
 
 <a id="action-space"></a>
 
-## Action Space
+## 🎛️ Action Space
 
 The SAC actor outputs a 3-dimensional continuous command, squashed through `tanh` into `[-1, 1]`:
 
@@ -226,7 +461,7 @@ The SAC actor outputs a 3-dimensional continuous command, squashed through `tanh
 
 <a id="reward-function"></a>
 
-## Reward Function
+## 🏁 Reward Function
 
 | Term | Weight | Description |
 |---|---|---|
@@ -253,7 +488,7 @@ Reward weights are overridden per curriculum level (see [configs/curriculum.yaml
 
 <a id="curriculum-learning"></a>
 
-## Curriculum Learning
+## 📈 Curriculum Learning
 
 Training progresses through 7 levels. A level advances when `success_rate` (averaged over the last 100 episodes) exceeds the level threshold. Each level independently adjusts obstacle count, episode length, reward weights, and SAC hyperparameters.
 
@@ -298,7 +533,7 @@ Full configuration: [configs/curriculum.yaml](configs/curriculum.yaml).
 
 <a id="hyperparameters"></a>
 
-## Initial Hyperparameters
+## ⚙️ Initial Hyperparameters
 
 <details>
 <summary><b>Click to expand SAC hyperparameters table</b></summary>
@@ -336,3 +571,121 @@ Full configuration: [configs/curriculum.yaml](configs/curriculum.yaml).
 These are the base hyperparameters from [configs/a1.yaml](configs/a1.yaml). Each curriculum level overrides a subset of them — see [configs/curriculum.yaml](configs/curriculum.yaml) for per-level values.
 
 </details>
+
+---
+
+<a id="experiments"></a>
+
+## 🖼️ Experiments
+
+The figures below come from a recorded TensorBoard SAC training run bundled with this repository. Episode metrics use episode index on the x-axis, while `train/*` metrics reflect the logged optimization progression. All displayed curves are smoothed for readability so the main learning trends are easier to inspect.
+
+### Success Rate
+
+<p align="center">
+  <img src="docs/experiments/success_rate.png" alt="Success rate during SAC training" width="88%" />
+</p>
+
+**Axes.** X-axis = episode index. Y-axis = rolling success rate over recent episodes.
+
+The success-rate trajectory shows a meaningful transition from near-random behavior to a much more reliable navigation policy. After the unstable initial phase, the agent spends most of training in a substantially higher-success regime instead of repeatedly collapsing back to failure. This is the clearest indicator that the SAC policy is learning to reach the goal under randomized obstacle layouts.
+
+### Batch Reward Average
+
+<p align="center">
+  <img src="docs/experiments/batch_reward_average.png" alt="Average batch reward during SAC training" width="88%" />
+</p>
+
+**Axes.** X-axis = logged training progression. Y-axis = `train/batch_reward_av`, the average reward signal observed in training batches.
+
+`train/batch_reward_av` increases steadily across training, which is what we want to see from the optimizer-facing reward signal. In this project, that upward trend means the replayed experience is gradually dominated by more useful trajectories: better target progress, fewer catastrophic interactions with obstacles, and less wasted motion. It is a compact summary that the overall quality of behavior improves over time.
+
+### Critic Loss
+
+<p align="center">
+  <img src="docs/experiments/critic_loss.png" alt="Critic loss during SAC training" width="88%" />
+</p>
+
+**Axes.** X-axis = logged training progression. Y-axis = critic loss value.
+
+The critic loss exhibits strong early transients, which is expected when the replay buffer is still filling with diverse and highly non-stationary experience. Later, the curve settles into a tighter operating range, suggesting that value estimation becomes more stable as the policy and the state distribution improve. This is a healthy pattern for SAC in a difficult navigation task with sparse success and hard collision penalties.
+
+### Actor Loss
+
+<p align="center">
+  <img src="docs/experiments/actor_loss.png" alt="Actor loss during SAC training" width="88%" />
+</p>
+
+**Axes.** X-axis = logged training progression. Y-axis = actor loss value.
+
+The actor loss trends downward throughout training instead of drifting chaotically, which indicates sustained policy improvement against the critic-defined objective. In practical terms, the policy is becoming better at proposing high-level commands that both make progress toward the target and avoid obviously dangerous motion patterns. The long downward slope is a sign of continued refinement rather than early stagnation.
+
+### Actor Entropy
+
+<p align="center">
+  <img src="docs/experiments/actor_entropy.png" alt="Actor entropy during SAC training" width="88%" />
+</p>
+
+**Axes.** X-axis = logged training progression. Y-axis = actor entropy.
+
+Actor entropy decreases over time, meaning the policy gradually shifts from broad exploration to more confident action selection. That behavior is expected in SAC: the policy first needs to try many motion strategies, then it can collapse toward more reliable command distributions once obstacle-avoidance and goal-reaching patterns become repeatable. The late-stage low-entropy regime suggests consolidation rather than random exploration.
+
+### Collision Rate
+
+<p align="center">
+  <img src="docs/experiments/collision_rate.png" alt="Collision rate during SAC training" width="88%" />
+</p>
+
+**Axes.** X-axis = episode index. Y-axis = rolling collision rate over recent episodes.
+
+The collision-rate plot shows the safety story of training. Unsafe behavior is common at the beginning, but the metric falls sharply once the policy starts exploiting LiDAR structure and the reward shaping more effectively. The later regime is not perfectly flat, but it is much safer than the initial phase and is consistent with the intended curriculum-driven emergence of obstacle-aware navigation.
+
+---
+
+<a id="sim2real"></a>
+
+## 🤖 Sim2Real
+
+The project now includes a first successful sim2real-style result artifact. The GIF below is the compact preview version, and the still image shows the control interface during the experiment.
+
+<p align="center">
+  <img src="docs/test2.gif" alt="SuperDog sim2real result preview" width="45%" />
+  <img src="docs/image.png" alt="SuperDog control interface during sim2real" width="45%" />
+</p>
+
+The left panel shows the deployment-style result preview, while the right panel captures the operator-side control setup used during the run. The full recorded result is also available as a video file: [2026-03-26 07.42.49.mp4](docs/2026-03-26 07.42.49.mp4).
+
+---
+
+<a id="commands"></a>
+
+## ⚙️ Commands
+
+For installation and the exact operational command set, use [RUNME.md](RUNME.md). The most common entry points are:
+
+```bash
+python scripts/train.py configs/a1.yaml --train --headless
+python scripts/train.py configs/a1.yaml
+tensorboard --logdir runs/Mar26_04-55-56_griga-Katana-GF76-12UGSO
+python scripts/export_to_onnx.py --model_path data/models/<run_id>/sac_actor.pth --config_path configs/a1.yaml --output_path sac_actor.onnx
+```
+
+---
+
+<a id="prompt-log"></a>
+
+## 💬 Prompt Log
+
+The prompt log for repository and documentation work is stored separately in [PROMPTS.md](PROMPTS.md).
+
+---
+
+<a id="references"></a>
+
+## 📚 References
+
+- Tuomas Haarnoja, Aurick Zhou, Pieter Abbeel, and Sergey Levine. "Soft Actor-Critic: Off-Policy Maximum Entropy Deep Reinforcement Learning with a Stochastic Actor." [arXiv:1801.01290](https://arxiv.org/abs/1801.01290)
+- Tuomas Haarnoja, Aurick Zhou, Kristian Hartikainen, George Tucker, Sehoon Ha, Jie Tan, Vikash Kumar, Henry Zhu, Abhishek Gupta, Pieter Abbeel, and Sergey Levine. "Soft Actor-Critic Algorithms and Applications." [arXiv:1812.05905](https://arxiv.org/abs/1812.05905)
+- MuJoCo documentation: [mujoco.readthedocs.io](https://mujoco.readthedocs.io/)
+- Unitree Robotics official website: [unitree.com](https://www.unitree.com/)
+- OpenAI Spinning Up SAC overview: [spinningup.openai.com/en/latest/algorithms/sac.html](https://spinningup.openai.com/en/latest/algorithms/sac.html)

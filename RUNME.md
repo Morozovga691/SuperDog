@@ -1,222 +1,140 @@
-# RUNME — SuperDog Path Planning
+# RUNME
 
-## Dependencies
-
-| Package | Version |
-|---|---|
-| Python | ≥ 3.8 |
-| PyTorch | 2.4.1 |
-| MuJoCo | 3.2.3 |
-| NumPy | 1.24.3 |
-| TensorBoard | ≥ 2.7.0 |
-| PyYAML | ≥ 5.4.1 |
-| rsl-rl-lib | 2.3.3 |
-
-Optional:
-
-| Package | Purpose |
-|---|---|
-| `mujoco-mjx`, `jax`, `jaxlib` | MJX GPU/TPU parallel simulation |
-| `onnxruntime` | ONNX model verification and real-robot inference |
-| ROS2 packages | Real-robot deployment |
-
-## Installation
+## Install
 
 ```bash
-# Create and activate conda environment
+cd last_project/SuperDog
+
 conda create --name superdog python=3.8
 conda activate superdog
 
-# Install package in development mode
 pip install -e .
-
-# Optional: MJX (GPU/TPU parallel simulation, 10-100x speedup)
-pip install -e ".[mjx]"
-
-# Optional: ROS2 interface
-pip install -e ".[ros2]"
 ```
 
----
+Optional extras:
 
-## Training
+```bash
+pip install -e ".[mjx]"
+pip install -e ".[ros2]"
+pip install onnxruntime
+```
 
-### Standard training (CPU/GPU, sequential)
+## Standard Training
 
 ```bash
 python scripts/train.py configs/a1.yaml --train --headless
 ```
 
-### Training with all flags
+This starts SAC training with the default robot config, curriculum, reward shaping, and checkpoint/logging behavior.
+
+## Useful Commands
+
+Train with explicit overrides:
 
 ```bash
 python scripts/train.py configs/a1.yaml \
-    --train \
-    --headless \
-    --episodes 1000 \
-    --sac_decimation 5 \
-    --log_dir runs \
-    --save_every_n 100 \
-    --spawn_clearance 0.7 \
-    --grid_step 0.1
+  --train \
+  --headless \
+  --episodes 1000 \
+  --sac_decimation 5 \
+  --save_every_n 100 \
+  --spawn_clearance 0.7 \
+  --grid_step 0.1
 ```
 
-| Flag | Default | Description |
-|---|---|---|
-| `config_file` | — | Path to YAML config (required) |
-| `--train` | off | Enable training mode (omit for evaluation) |
-| `--headless` | off | Disable MuJoCo viewer (faster) |
-| `--episodes` | 1000 | Number of training episodes |
-| `--sac_decimation` | 5 | Run SAC every N control cycles |
-| `--log_dir` | `runs` | TensorBoard log directory |
-| `--save_every_n` | 100 | Save checkpoint every N episodes |
-| `--spawn_clearance` | 0.7 | Obstacle clearance radius for spawn (m) |
-| `--grid_step` | 0.1 | Grid resolution for free space sampling (m) |
-
-### MJX parallel training (GPU/TPU)
+MJX parallel training:
 
 ```bash
 python scripts/train.py configs/a1.yaml \
-    --train \
-    --headless \
-    --use_mjx \
-    --batch_size 128
+  --train \
+  --headless \
+  --use_mjx \
+  --batch_size 128
 ```
 
-| Flag | Default | Description |
-|---|---|---|
-| `--use_mjx` | off | Enable MJX batched parallel simulation |
-| `--batch_size` | 128 | Number of parallel environments (MJX only) |
-
----
-
-## Fine-tuning
-
-Load a saved checkpoint and continue training with reset entropy and optimizer state:
+Resume from the latest checkpoint:
 
 ```bash
 python scripts/train.py configs/a1.yaml \
-    --train \
-    --headless \
-    --fine_tune
+  --train \
+  --headless \
+  --load_pretrained
 ```
 
-Load checkpoint and continue training **without** resetting buffer or optimizer:
+Fine-tune from the latest checkpoint:
 
 ```bash
 python scripts/train.py configs/a1.yaml \
-    --train \
-    --headless \
-    --load_pretrained
+  --train \
+  --headless \
+  --fine_tune
 ```
 
-Start training from a checkpoint but with a **fresh replay buffer**:
+Resume from checkpoint with a fresh replay buffer:
 
 ```bash
 python scripts/train.py configs/a1.yaml \
-    --train \
-    --headless \
-    --load_pretrained \
-    --fresh_buffer
+  --train \
+  --headless \
+  --load_pretrained \
+  --fresh_buffer
 ```
 
----
-
-## Evaluation
-
-Run evaluation (no `--train` flag — loads latest checkpoint automatically):
+Run evaluation:
 
 ```bash
 python scripts/train.py configs/a1.yaml
 ```
 
-Run with visualization:
+Inspect the checked-in TensorBoard run:
 
 ```bash
-python scripts/train.py configs/a1.yaml
-# (omit --headless to open the MuJoCo viewer)
+tensorboard --logdir runs/Mar26_04-55-56_griga-Katana-GF76-12UGSO
 ```
 
----
-
-## TensorBoard
+Inspect newly created default training runs:
 
 ```bash
 tensorboard --logdir data/runs
 ```
 
-Then open [http://localhost:6006](http://localhost:6006) in your browser.
-
-Track a specific run:
-
-```bash
-tensorboard --logdir data/runs/Mar26_04-27-43_griga-Katana-GF76-12UGSO
-```
-
----
-
-## Export to ONNX
-
-Export a trained SAC actor for deployment on a real robot:
+Export the trained actor to ONNX:
 
 ```bash
 python scripts/export_to_onnx.py \
-    --model_path data/models/<run_id>/sac_actor.pth \
-    --config_path configs/a1.yaml \
-    --output_path sac_actor.onnx
+  --model_path data/models/<run_id>/sac_actor.pth \
+  --config_path configs/a1.yaml \
+  --output_path sac_actor.onnx
 ```
 
-With model verification (requires `onnxruntime`):
-
-```bash
-pip install onnxruntime
-python scripts/export_to_onnx.py \
-    --model_path data/models/<run_id>/sac_actor.pth \
-    --config_path configs/a1.yaml \
-    --output_path sac_actor.onnx \
-    --verify
-```
-
----
-
-## ONNX Inference
-
-Run inference with an exported ONNX model:
+Run ONNX inference:
 
 ```bash
 python scripts/inference_onnx.py \
-    --model_path sac_actor.onnx \
-    --config_path configs/a1.yaml
+  --model_path sac_actor.onnx \
+  --config_path configs/a1.yaml
 ```
 
----
+## Output Paths
 
-## Project Layout
+- Checkpoints: `data/models/<timestamp>/`
+- Replay buffer snapshots: `data/buffer/`
+- Default TensorBoard logs for new runs: `data/runs/<run_name>/`
+- Checked-in sample TensorBoard run: `runs/Mar26_04-55-56_griga-Katana-GF76-12UGSO/`
+- Walking policy checkpoint: `data/walking_policy/model_4999.pt`
+- Main documentation: `README.md`
 
-```
-SuperDog/
-├── configs/
-│   ├── a1.yaml            # Main robot and SAC config
-│   └── curriculum.yaml    # Curriculum learning levels
-├── data/
-│   ├── models/            # Saved checkpoints (gitignored)
-│   ├── runs/              # TensorBoard logs (gitignored)
-│   └── walking_policy/    # Pretrained walking policy weights
-├── scripts/
-│   ├── train.py           # Main training + evaluation entry point
-│   ├── export_to_onnx.py  # Export SAC actor to ONNX
-│   └── inference_onnx.py  # ONNX inference for real robot
-├── src/
-│   ├── policy/
-│   │   ├── SAC/           # SAC actor, critic, utils
-│   │   ├── replay_buffer.py
-│   │   └── walking_policy.py
-│   └── utils/
-│       ├── curriculum.py
-│       ├── observation.py
-│       ├── reward.py
-│       ├── scene_generator.py
-│       └── target_generator.py
-└── assets/
-    └── unitree_a1/        # MuJoCo robot model and meshes
-```
+## Runtime Notes
+
+- `--train` enables training mode. Without it, `scripts/train.py` runs evaluation.
+- In evaluation mode, the script automatically loads the latest checkpoint from `data/models/`.
+- The current `a1.yaml` sets `sac_decimation: 10`, so the effective default SAC rate is lower than the parser's bare `--sac_decimation 5` default unless you override it explicitly.
+- Headless training without MJX is possible but slow.
+- If MJX initialization fails, the script falls back to sequential MuJoCo simulation.
+
+## Troubleshooting
+
+- If `--use_mjx` is requested but MJX or JAX is not installed, install the optional `.[mjx]` extra and rerun.
+- If TensorBoard does not show new logs, check whether the run was created under `data/runs/` instead of the checked-in `runs/` directory.
+- If evaluation does not find a checkpoint, train once first or confirm that `data/models/` contains a saved run directory.
+- For project overview, architecture, reward design, and training plots, use `README.md` rather than this file.

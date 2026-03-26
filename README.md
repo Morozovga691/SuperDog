@@ -172,7 +172,7 @@ $$J^\pi(s) := \mathbb{E}_{A \sim \pi(\cdot \mid s)} \left[ q^w(s, A) - \eta \ln 
 
 Using that value, the Bellman operator for SAC is written as:
 
-$$\mathcal{P}^\pi[q^w](S_t, A_t) := R_t + \gamma \mathbb{E}_{S_{t+1} \sim P(\cdot \mid S_t, A_t)} \left[ V^\pi(S_{t+1}) \right]$$
+$$\mathcal{P}^\pi[q^w](S_t, A_t) := R_t + \gamma \mathbb{E}_{S_{t+1} \sim P(\cdot \mid S_t, A_t)} \left[ J^\pi(S_{t+1}) \right]$$
 
 For sampled updates, the next-state soft value is approximated with the target critic:
 

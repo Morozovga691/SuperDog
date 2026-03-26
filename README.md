@@ -168,7 +168,8 @@ Before the equations, we define the symbols once and keep the notation consisten
 
 The soft state value is defined before it is used in the Bellman operator:
 
-$$J^\pi(s) := \mathbb{E}_{A \sim \pi(\cdot \mid s)} \left[ q^w(s, A) - \eta \ln \pi(A \mid s) \right]$$
+
+$$J^\pi_{SAC} := \sum_{t=0}^{\infty} \mathbb{E}_{\zeta^\pi} \left[ r(S_t, A_t) + \eta \mathcal{H}[\pi(\cdot|S_t)] \right]$$
 
 Using that value, the Bellman operator for SAC is written as:
 

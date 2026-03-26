@@ -169,15 +169,23 @@ Before the equations, we define the symbols once and keep the notation consisten
 The soft state value is defined before it is used in the Bellman operator:
 
 
-$$J^\pi_{SAC} := \sum_{t=0}^{\infty} \mathbb{E}_{\zeta^\pi} \left[ r(S_t, A_t) + \eta \mathcal{H}[\pi(\cdot|S_t)] \right]$$
+$$\mathcal{J}_{\text{SAC}}(\pi) := \sum_{t=0}^{\infty} \mathbb{E}_{\zeta^\pi} \left[ r(S_t, A_t) + \eta \mathcal{H}[\pi(\cdot|S_t)] \right]$$
 
+with entropy defined as:
+
+$$\mathcal{H}[\pi(\cdot \mid s)] := - \mathbb{E}_{A \sim \pi(\cdot \mid s)} \left[ \ln \pi(A \mid s) \right]$$
+
+  Where 
+  
+  $$\zeta^\pi := \zeta^{\pi}(s, a | s_{-}, a_{-}) := P(s | s_{-}, a_{-}) \pi(a | s_{-})$$
+  
 Using that value, the Bellman operator for SAC is written as:
 
-$$\mathcal{P}^\pi[q^w](S_t, A_t) := R_t + \gamma \mathbb{E}_{S_{t+1} \sim P(\cdot \mid S_t, A_t)} \left[ J^\pi(S_{t+1}) \right]$$
+$$\mathcal{P}^\pi[q^w](S_t, A_t) := R_t + \gamma \mathbb{E}_{S_{t+1} \sim P(\cdot \mid S_t, A_t)} \left[ \mathcal{J}^\pi(S_{t+1}) \right]$$
 
 For sampled updates, the next-state soft value is approximated with the target critic:
 
-$$J^\pi(S_{t+1}) = q^{w_{\text{target}}}(S_{t+1}, A_{t+1}) - \eta \ln \pi(A_{t+1} \mid S_{t+1})$$
+$$\mathcal{J}^\pi(S_{t+1}) = q^{w_{\text{target}}}(S_{t+1}, A_{t+1}) - \eta \ln \pi(A_{t+1} \mid S_{t+1})$$
 
 where $A_{t+1} \sim \pi(\cdot \mid S_{t+1})$.
 
@@ -197,17 +205,8 @@ The actor update follows the critic signal while accounting for the entropy-regu
 
 $$\theta_{t+1} \leftarrow \theta_t + \alpha_t \nabla_\theta q^w(S_t, \pi^\theta(S_t)) \big|_{\theta = \theta_t}$$
 
-5. SAC extension: entropy bonus
 
-The global training objective is:
-
-$$\mathcal{J}_{\text{SAC}}(\pi) := \sum_{t=0}^{\infty} \mathbb{E} \left[ R_t + \eta \mathcal{H}[\pi(\cdot \mid S_t)] \right]$$
-
-with entropy defined as:
-
-$$\mathcal{H}[\pi(\cdot \mid s)] := - \mathbb{E}_{A \sim \pi(\cdot \mid s)} \left[ \ln \pi(A \mid s) \right]$$
-
-6. Change of variables
+5. Change of variables
 
 For $a = \tanh(u)$, the density correction used in the policy is:
 
@@ -215,7 +214,7 @@ $$\ln \pi(a \mid s) = \ln \mu(u \mid s) - \sum_{i=1}^{D} \ln \left( 1 - \tanh^2(
 
 where $D$ is the action dimension.
 
-7. SAC extension: automatic entropy tuning
+6. SAC extension: automatic entropy tuning
 
 SAC optimizes the temperature $\eta$ toward a target entropy $\bar{\mathcal{H}}$:
 
@@ -225,7 +224,7 @@ The target entropy heuristic is typically:
 
 $$\bar{\mathcal{H}} = -\dim(\mathcal{A})$$
 
-8. Target network updates
+7. Target network updates
 
 Target parameters are updated with Polyak averaging:
 
